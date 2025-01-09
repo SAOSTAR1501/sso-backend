@@ -5,6 +5,7 @@ import { join } from 'path';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import * as cookieParser from 'cookie-parser';
+import { setupSwagger } from './config/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -21,6 +22,8 @@ async function bootstrap() {
   app.setViewEngine('hbs');
 
   app.use(cookieParser());
+
+  setupSwagger(app);
 
   await app.listen(port);
   console.log(`Auth server is running on: http://localhost:${port}`);

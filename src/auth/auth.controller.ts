@@ -4,19 +4,10 @@ import { AuthService } from './auth.service';
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
-
-  // Giao diện Login
-  @Get('login')
-  @Render('login') // Sử dụng Handlebars
-  showLoginPage(@Req() req) {
-    return { message: 'Please log in', redirectUri: req.query.redirectUri || '/' }; // Truyền dữ liệu vào template
-  }
-
   // Xử lý đăng nhập
   @Post('login')
   async login(@Body() body, @Res() res) {
     const { username, password, redirectUri } = body;
-    console.log({ username, password, redirectUri });
     const user = await this.authService.validateUser(username, password);
     if (!user) {
       return res.status(401).render('login', { message: 'Invalid credentials', redirectUri });
@@ -25,25 +16,12 @@ export class AuthController {
     return res.redirect(`${redirectUri}?token=${token.accessToken}`);
   }
 
-  @Get('signup')
-  @Render('signup') // Render view signup.hbs
-  showSignupPage() {
-    return { message: 'Create your account' };
-  }
-
   // Xử lý form đăng ký
   @Post('signup')
   async signup(@Body() body, @Res() res) {
     const { username, email, password } = body;
     await this.authService.signup({ username, email, password });
-    return res.redirect('/auth/login'); // Chuyển hướng về trang login sau khi đăng ký
-  }
-
-  // Hiển thị trang Forgot Password
-  @Get('forgot-password')
-  @Render('forgot-password') // Render view forgot-password.hbs
-  showForgotPasswordPage() {
-    return { message: 'Reset your password' };
+    return res.redirect('/auth/login');
   }
 
   // Xử lý gửi email khôi phục mật khẩu

@@ -1,6 +1,9 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { InjectModel } from '@nestjs/mongoose';
 import * as bcrypt from 'bcrypt';
+import { Model } from 'mongoose';
+import { User, UserDocument } from 'src/user/user.schema';
 import { UserService } from 'src/user/user.service';
 
 @Injectable()
@@ -8,10 +11,12 @@ export class AuthService {
   constructor(
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
-  ) {}
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+  ) { }
 
-  async validateUser(username: string, password: string): Promise<any> {
-    const user = await this.userService.findByUsername(username);
+  async validateUser(email: string, password: string): Promise<any> {
+    const user = await this.userModel.findOne({ email }).exec();
+    console.log({ user });
     if (user && bcrypt.compareSync(password, user.password)) {
       const { password, ...result } = user;
       return result;
@@ -19,7 +24,7 @@ export class AuthService {
     return null;
   }
 
-  async login(user: any,  res: any) {
+  async login(user: any, res: any) {
     const payload = { username: user.username, sub: user.id };
     const accessToken = this.jwtService.sign(payload, {
       expiresIn: '15m', // Access Token sống 15 phút
