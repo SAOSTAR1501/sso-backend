@@ -1,28 +1,40 @@
+// auth.module.ts
 import { Module } from '@nestjs/common';
-
-import { AuthController } from './auth.controller';
-import { PassportModule } from '@nestjs/passport';
 import { JwtModule } from '@nestjs/jwt';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { PassportModule } from '@nestjs/passport';
+import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { UserModule } from 'src/user/user.module';
-import { MongooseModule } from '@nestjs/mongoose';
-import { User, UserSchema } from 'src/user/user.schema';
-import { ConfigService } from '@nestjs/config';
+import { UserModule } from '../user/user.module';
+import { JwtStrategy } from './strategies/jwt.strategy';
+import { JwtAuthGuard } from './guard/jwt.guard';
+import { GoogleStrategy } from './strategies/google.strategy';
 
 @Module({
   imports: [
-    PassportModule,
+    UserModule,
+    PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
-      useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('CUS_ACCESS_TOKEN_KEY'),
-        signOptions: { expiresIn: '1h' }
+      imports: [ConfigModule],
+      useFactory: async (configService: ConfigService) => ({
+        secret: configService.get('JWT_SECRET'),
+        signOptions: { 
+          expiresIn: configService.get('JWT_ACCESS_EXPIRES'),
+        },
       }),
-      inject: [ConfigService]
+      inject: [ConfigService],
     }),
-    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
-    UserModule
   ],
-  providers: [AuthService],
-  controllers: [AuthController]
+  controllers: [AuthController],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    {
+      provide: 'APP_GUARD',
+      useClass: JwtAuthGuard,
+    },
+    GoogleStrategy
+  ],
+  exports: [AuthService],
 })
-export class AuthModule { }
+export class AuthModule {}

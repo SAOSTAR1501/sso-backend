@@ -11,6 +11,5 @@ export function setupSwagger(app: INestApplication) {
 
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
-
   console.log('Swagger API documentation is available at http://localhost:8080/api/docs');
 }

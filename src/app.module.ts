@@ -9,6 +9,9 @@ import { ConfigModule } from '@nestjs/config';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true, // Để ConfigService có thể sử dụng toàn cục
+      envFilePath: [
+        `.env.${process.env.NODE_ENV || 'development'}`,
+      ],
     }), 
     AuthModule, 
     UserModule, 

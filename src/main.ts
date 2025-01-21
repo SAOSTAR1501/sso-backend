@@ -1,31 +1,49 @@
-// src/main.ts
 import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { join } from 'path';
-import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
+import * as session from 'express-session';
 import * as cookieParser from 'cookie-parser';
-import { setupSwagger } from './config/swagger';
+import helmet from 'helmet';
+import { setupSwagger } from './docs/swagger';
+import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const configService = app.get(ConfigService);
-  const port = configService.get('PORT');
 
+  // Security middlewares
+  app.use(helmet());
+  app.use(cookieParser());
+
+  // Global validation pipe
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: true,
+    })
+  );
+
+  // CORS configuration
+  const corsConfig = configService.get<string>('CORS_ORIGINS')?.split(',') || [];
   app.enableCors({
-    origin: ['http://localhost:4000'], // Chỉ cho phép Mini App
+    origin: corsConfig,
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   });
 
-  // Cấu hình đường dẫn tới thư mục views
-  app.setBaseViewsDir(join(__dirname, '..', 'views'));
-  app.setViewEngine('hbs');
+  // API prefix
+  app.setGlobalPrefix('api');
 
-  app.use(cookieParser());
 
   setupSwagger(app);
 
+  const port = configService.get('PORT') || 8080;
   await app.listen(port);
-  console.log(`Auth server is running on: http://localhost:${port}`);
+
+  console.log(`Application is running on: http://localhost:${port}`);
 }
+
 bootstrap();
