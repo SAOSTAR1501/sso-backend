@@ -1,12 +1,12 @@
-import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
-import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
-import * as session from 'express-session';
+import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import * as cookieParser from 'cookie-parser';
 import helmet from 'helmet';
-import { setupSwagger } from './docs/swagger';
 import { AppModule } from './app.module';
+import { setupSwagger } from './docs/swagger';
+import * as session from 'express-session';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -25,14 +25,26 @@ async function bootstrap() {
     })
   );
 
-  // CORS configuration
   const corsConfig = configService.get<string>('CORS_ORIGINS')?.split(',') || [];
   app.enableCors({
     origin: corsConfig,
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   });
+
+  // app.use(
+  //   session({
+  //     secret: configService.get('SESSION_SECRET'),
+  //     resave: false,
+  //     saveUninitialized: false,
+  //     cookie: {
+  //       secure: process.env.NODE_ENV === 'production',
+  //       httpOnly: true,
+  //       maxAge: 1000 * 60 * 60 * 24 // 24 hours
+  //     }
+  //   })
+  // );
 
   // API prefix
   app.setGlobalPrefix('api');

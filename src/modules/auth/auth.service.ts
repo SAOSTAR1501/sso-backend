@@ -1,10 +1,12 @@
-import { Injectable, ConflictException, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, ConflictException, UnauthorizedException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { UserService } from '../user/user.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import * as bcrypt from 'bcrypt';
+import { UserService } from '../user/user.service';
+import { OtpService } from '../otp/otp.service';
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class AuthService {
@@ -12,6 +14,8 @@ export class AuthService {
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly otpService: OtpService,
+    private readonly emailService: EmailService
   ) { }
 
   async register(registerDto: RegisterDto) {
@@ -34,6 +38,10 @@ export class AuthService {
       fullName: registerDto.fullName,
       password: hashedPassword,
       roles: ['user'],
+      avatar: {
+        url: `https://avatar.iran.liara.run/username?username=${registerDto.fullName}`,
+        publicId: '',
+      }
     });
 
     // Generate tokens
@@ -83,6 +91,7 @@ export class AuthService {
         email: user.email,
         fullName: user.fullName,
         roles: user.roles,
+        avatar: user.avatar,
       },
       tokens,
       redirectTo: redirectUrl ? this.buildRedirectUrl(redirectUrl, tokens) : null,
@@ -107,6 +116,14 @@ export class AuthService {
         },
         roles: ['user'],
       });
+    } else if (!user.avatar?.url) {
+      // Nếu người dùng tồn tại nhưng chưa có avatar, cập nhật avatar
+      user = await this.userService.update(user._id.toString(), {
+        avatar: {
+          url: googleUser.picture,
+          publicId: user.avatar?.publicId || '',
+        },
+      });
     }
 
     // Generate tokens
@@ -114,7 +131,6 @@ export class AuthService {
 
     // Get default redirect URL from config if needed
     const defaultRedirectUrl = this.configService.get('DEFAULT_CLIENT_REDIRECT_URL');
-
     return {
       user: {
         id: user._id,
@@ -154,7 +170,75 @@ export class AuthService {
     };
   }
 
-  private validateRedirectUrl(redirectUrl: string): boolean {
+  private buildRedirectUrl(redirectUrl: string, tokens: { accessToken: string, refreshToken: string }) {
+    const url = new URL(redirectUrl);
+    // Sử dụng URL fragment thay vì query params để bảo mật token
+    url.hash = `access_token=${tokens.accessToken}&refresh_token=${tokens.refreshToken}`;
+    return url.toString();
+  }
+
+  async forgotPassword(email: string) {
+    // Check if user exists
+    const user = await this.userService.findByEmail(email);
+    if (!user) {
+      // For security reasons, we don't want to reveal if the email exists
+      return {
+        success: true,
+        message: 'If your email is registered, you will receive a password reset OTP'
+      };
+    }
+
+    // Generate and send OTP
+    const { otp, shouldSendEmail } = await this.otpService.createOTP(email, 'RESET_PASSWORD');
+
+    // TODO: Send email with OTP
+    if (shouldSendEmail && otp) {
+      await this.emailService.sendPasswordResetOtp(email, otp);
+    } else {
+      return {
+        success: false,
+        message: 'An OTP has already been sent, please check your email!'
+      }
+    }
+
+    return {
+      success: true,
+      message: 'If your email is registered, you will receive a password reset OTP'
+    };
+  }
+
+  async resetPassword(email: string, otp: string, newPassword: string) {
+    // Verify OTP
+    const isValid = await this.otpService.checkOTPResetPassword(email, otp, 'RESET_PASSWORD');
+
+    if (!isValid) {
+      throw new BadRequestException('Invalid or expired OTP');
+    }
+
+    // Get user
+    const user = await this.userService.findByEmail(email);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password
+    await this.userService.update(user._id.toString(), {
+      password: hashedPassword
+    });
+
+    // Invalidate all refresh tokens
+    // await this.userService.invalidateRefreshTokens(user._id);
+
+    return {
+      success: true,
+      message: 'Password reset successfully'
+    };
+  }
+  
+  validateRedirectUrl(redirectUrl: string): boolean {
     try {
       const url = new URL(redirectUrl);
       const allowedDomains = this.configService
@@ -162,9 +246,9 @@ export class AuthService {
         .split(',')
         .map(domain => {
           try {
-            return new URL(domain).hostname; // Chỉ lấy hostname từ URL
+            return new URL(domain).hostname;
           } catch {
-            return domain; // Nếu không phải URL hợp lệ, giữ nguyên
+            return domain;
           }
         });
       return allowedDomains.some(domain =>
@@ -175,10 +259,12 @@ export class AuthService {
     }
   }
 
-  private buildRedirectUrl(redirectUrl: string, tokens: { accessToken: string, refreshToken: string }) {
-    const url = new URL(redirectUrl);
-    // Sử dụng URL fragment thay vì query params để bảo mật token
-    url.hash = `access_token=${tokens.accessToken}&refresh_token=${tokens.refreshToken}`;
-    return url.toString();
+  async getCurrentUser(userId: string) {
+    const user = await this.userService.findById(userId); // Phương thức findById trong UserService
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    
+    return user;
   }
 }

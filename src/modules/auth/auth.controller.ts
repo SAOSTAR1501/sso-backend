@@ -1,29 +1,35 @@
 // auth.controller.ts
-import { 
-  Controller, 
-  Post, 
-  Body, 
-  Res, 
-  HttpCode, 
-  HttpStatus,
-  UseGuards,
+import {
+  Body,
+  Controller,
   Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Query,
   Req,
-  Query
+  Res,
+  UseGuards
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
-import { Response, Request } from 'express';
+import { ConfigService } from '@nestjs/config';
+import { AuthGuard } from '@nestjs/passport';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Request, Response } from 'express';
+import { Public } from '../../decorators/public.decorator';
 import { AuthService } from './auth.service';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
-import { Public } from './decorators/public.decorator';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from './guard/jwt.guard';
-import { AuthGuard } from '@nestjs/passport';
 
 @ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly configService: ConfigService
+  ) { }
 
   @Public()
   @Post('register')
@@ -32,42 +38,35 @@ export class AuthController {
     @Res() res: Response,
   ) {
     const result = await this.authService.register(registerDto);
-    
-    if (result.redirectTo) {
-      // Nếu có redirect URL, chuyển hướng người dùng
-      return res.redirect(result.redirectTo);
-    }
 
-    // Nếu không có redirect, set cookie và trả về response bình thường
     this.setTokenCookie(res, result.tokens.accessToken);
     return res.json({
       success: true,
       user: result.user,
+      redirectTo: result.redirectTo
     });
   }
 
   @Public()
   @Post('login')
-  @ApiQuery({ name: 'redirect_uri', required: false })
   @ApiOperation({ summary: 'User login' })
   @HttpCode(HttpStatus.OK)
   async login(
     @Body() loginDto: LoginDto,
-    @Query('redirect_uri') redirectUri: string,
     @Res() res: Response,
   ) {
     const result = await this.authService.login(loginDto);
-    
-    if (result.redirectTo) {
+
+    if (result.tokens.accessToken) {
       // Nếu có redirect URL, chuyển hướng người dùng
-      return res.redirect(result.redirectTo);
+      this.setTokenCookie(res, result.tokens.accessToken);
     }
 
     // Nếu không có redirect, set cookie và trả về response bình thường
-    this.setTokenCookie(res, result.tokens.accessToken);
     return res.json({
       success: true,
       user: result.user,
+      redirectTo: result.redirectTo
     });
   }
 
@@ -75,8 +74,8 @@ export class AuthController {
   @Get('google')
   @UseGuards(AuthGuard('google'))
   @ApiOperation({ summary: 'Google OAuth login' })
-  async googleAuth() {
-    // Guard redirects to Google
+  @ApiQuery({ name: 'redirect_uri', required: false })
+  async googleAuth(@Query('redirect_uri') redirectUri: string, @Req() req: Request) {
   }
 
   @Public()
@@ -85,10 +84,6 @@ export class AuthController {
   @ApiOperation({ summary: 'Google OAuth callback' })
   async googleAuthRedirect(@Req() req: Request, @Res() res: Response) {
     const result = await this.authService.googleLogin(req.user);
-    
-    if (result.redirectTo) {
-      return res.redirect(result.redirectTo);
-    }
 
     this.setTokenCookie(res, result.tokens.accessToken);
     return res.json({
@@ -117,10 +112,39 @@ export class AuthController {
   @ApiOperation({ summary: 'Get current user information' })
   @ApiResponse({ status: 200, description: 'Returns current user information' })
   async getCurrentUser(@Req() req: Request) {
+    const userId = req.user['id']; // `sub` là định danh người dùng trong payload JWT
+    const user = await this.authService.getCurrentUser(userId);
     return {
       success: true,
-      user: req.user,
+      user,
     };
+  }
+
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Initiate forgot password process' })
+  @ApiResponse({ status: 200, description: 'Password reset OTP sent if email exists' })
+  async forgotPassword(
+    @Body() body: ForgotPasswordDto
+  ) {
+    return this.authService.forgotPassword(body.email);
+  }
+
+  @Public()
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reset password using OTP' })
+  @ApiResponse({ status: 200, description: 'Password reset successful' })
+  @ApiResponse({ status: 400, description: 'Invalid OTP or password' })
+  async resetPassword(
+    @Body() body: ResetPasswordDto
+  ) {
+    return this.authService.resetPassword(
+      body.email,
+      body.otp,
+      body.newPassword
+    );
   }
 
   private setTokenCookie(res: Response, token: string) {
@@ -141,6 +165,4 @@ export class AuthController {
       sameSite: 'lax',
     });
   }
-
-
 }

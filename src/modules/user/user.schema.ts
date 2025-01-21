@@ -5,10 +5,10 @@ export type UserDocument = User & Document;
 
 @Schema({ timestamps: true }) // Tự động thêm createdAt và updatedAt
 export class User extends Document {
-  @Prop({ required: true, unique: false }) // Trường username là bắt buộc và duy nhất
+  @Prop({ required: true})
   fullName: string;
 
-  @Prop({ required: true }) // Trường password là bắt buộc
+  @Prop({ required: false })
   password: string;
 
   @Prop({ required: true, unique: true }) // Trường email là bắt buộc và duy nhất
@@ -20,6 +20,7 @@ export class User extends Document {
       publicId: { type: String, default: "" }
     },
     default: {
+      url: "",
       publicId: ""
     }
   })

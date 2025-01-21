@@ -7,11 +7,8 @@ import { User, UserDocument } from './user.schema';
 export class UserService {
   constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
   async findById(userId: string): Promise<UserDocument | null> {
-    return this.userModel.findById(userId).exec();
-  }
-  
-  async findByUsername(username: string): Promise<UserDocument | null> {
-    return this.userModel.findOne({ username }).exec();
+    return this.userModel.findById(userId)
+    .select('fullName email avatar googleId roles isActive').exec();
   }
 
   async findByEmail(email: string): Promise<User | null> {
@@ -21,6 +18,10 @@ export class UserService {
   async create(user: Partial<User>): Promise<User> {
     const newUser = new this.userModel(user);
     return newUser.save();
+  }
+
+  async update(userId: string, updateData: Partial<User>): Promise<User | null> {
+    return this.userModel.findByIdAndUpdate(userId, updateData, { new: true }).exec();
   }
 
   async updatePassword(userId: string, hashedPassword: string): Promise<User | null> {
