@@ -1,18 +1,25 @@
 import { Module } from '@nestjs/common';
 
-import { AuthModule } from './auth/auth.module';
-import { UserModule } from './user/user.module';
-import { DatabaseModule } from './database/database.module';
 import { ConfigModule } from '@nestjs/config';
+import { DatabaseModule } from './database/database.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { EmailModule } from './modules/email/email.module';
+import { EmailService } from './modules/email/email.service';
+import { OtpModule } from './modules/otp/otp.module';
+import { UserModule } from './modules/user/user.module';
+import { EmailTemplateService } from './modules/email/email-template.service';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true, // Để ConfigService có thể sử dụng toàn cục
+      envFilePath: [
+        `.env.${process.env.NODE_ENV || 'development'}`,
+      ],
     }), 
     AuthModule, 
     UserModule, 
-    DatabaseModule],
+    DatabaseModule, OtpModule, EmailModule],
   controllers: [],
   providers: [],
 })
