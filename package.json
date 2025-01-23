@@ -40,6 +40,7 @@
     "ioredis": "^5.4.2",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.9.3",
+    "nestjs-i18n": "^10.5.0",
     "nestjs-session": "^3.0.1",
     "nodemailer": "^6.9.16",
     "passport": "^0.7.0",

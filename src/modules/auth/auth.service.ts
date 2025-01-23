@@ -72,13 +72,13 @@ export class AuthService {
     // Find user
     const user = await this.userService.findByEmail(loginDto.email);
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new BadRequestException('Invalid credentials');
     }
 
     // Verify password
     const isPasswordValid = await bcrypt.compare(loginDto.password, user.password);
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new BadRequestException('Invalid credentials');
     }
 
     // Generate tokens
@@ -94,7 +94,8 @@ export class AuthService {
         avatar: user.avatar,
       },
       tokens,
-      redirectTo: redirectUrl ? this.buildRedirectUrl(redirectUrl, tokens) : null,
+      // redirectTo: redirectUrl ? this.buildRedirectUrl(redirectUrl, tokens) : null,
+      redirectTo: redirectUrl ? redirectUrl : null,
     };
 
     return response;
@@ -144,11 +145,35 @@ export class AuthService {
     };
   }
 
+  async refreshToken(refreshToken: string) {
+    const payload = await this.jwtService.verifyAsync(refreshToken, {
+      secret: this.configService.get('JWT_REFRESH_SECRET'),
+    })
+
+    const { exp, iat, ...rest } = payload;
+
+    const newAccessToken = await this.jwtService.signAsync(rest, {
+      secret: this.configService.get('JWT_SECRET'),
+      expiresIn: this.configService.get('JWT_ACCESS_EXPIRES'),
+    });
+
+    const newRefreshToken = await this.jwtService.signAsync(rest, {
+      secret: this.configService.get('JWT_REFRESH_SECRET'),
+      expiresIn: this.configService.get('JWT_REFRESH_EXPIRES'),
+    });
+
+    return {
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken
+    }
+  }
+
   private async generateTokens(user: any) {
     const payload = {
       sub: user._id,
       email: user.email,
-      roles: user.roles
+      roles: user.roles,
+      fullName: user.fullName,
     };
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -161,8 +186,6 @@ export class AuthService {
         expiresIn: this.configService.get('JWT_REFRESH_EXPIRES'),
       }),
     ]);
-
-    await this.userService.updateRefreshToken(user._id, refreshToken);
 
     return {
       accessToken,
@@ -237,7 +260,7 @@ export class AuthService {
       message: 'Password reset successfully'
     };
   }
-  
+
   validateRedirectUrl(redirectUrl: string): boolean {
     try {
       const url = new URL(redirectUrl);
@@ -264,7 +287,10 @@ export class AuthService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    
-    return user;
+
+    return {
+      result: user,
+      message: 'Get user info successfully'
+    };
   }
 }

@@ -15,7 +15,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         (request) => {
           let token = null;
           if (request && request.cookies) {
-            token = request.cookies['sso_token'];
+            token = request.cookies['access_token'];
           }
           return token;
         },

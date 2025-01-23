@@ -1,5 +1,6 @@
 // auth.controller.ts
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -11,7 +12,7 @@ import {
   Res,
   UseGuards
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
@@ -22,12 +23,15 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from './guard/jwt.guard';
+import { ConfigService } from '@nestjs/config';
+import 'src/types/session';
 
 @ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
+    private readonly jwtService: JwtService,
     private readonly configService: ConfigService
   ) { }
 
@@ -39,7 +43,7 @@ export class AuthController {
   ) {
     const result = await this.authService.register(registerDto);
 
-    this.setTokenCookie(res, result.tokens.accessToken);
+    this.setTokenCookie(res, result.tokens.accessToken, result.tokens.refreshToken);
     return res.json({
       success: true,
       user: result.user,
@@ -57,25 +61,86 @@ export class AuthController {
   ) {
     const result = await this.authService.login(loginDto);
 
-    if (result.tokens.accessToken) {
-      // Nếu có redirect URL, chuyển hướng người dùng
-      this.setTokenCookie(res, result.tokens.accessToken);
+    if (result.tokens) {
+      this.setTokenCookie(res, result.tokens.accessToken, result.tokens.refreshToken);
     }
-
-    // Nếu không có redirect, set cookie và trả về response bình thường
     return res.json({
       success: true,
-      user: result.user,
-      redirectTo: result.redirectTo
+      data: {
+        user: result.user,
+        redirectTo: result.redirectTo
+      }
     });
   }
+
+  // @Public()
+  // @Get('google')
+  // @UseGuards(AuthGuard('google'))
+  // @ApiOperation({ summary: 'Google OAuth login' })
+  // @ApiQuery({ name: 'redirect_uri', required: false })
+  // async googleAuth(@Query('redirect_uri') redirectUri: string, @Req() req: Request) {
+  //   console.log('Query Parameters:', req.query); // Debug log
+  //   if (redirectUri) {
+  //     console.log({ redirectUri });
+  //     req.session.redirectUri = redirectUri;
+  //   }
+  // }
+
+  // @Public()
+  // @Get('google/callback')
+  // @UseGuards(AuthGuard('google'))
+  // @ApiOperation({ summary: 'Google OAuth callback' })
+  // async googleAuthRedirect(@Req() req: Request, @Res() res: Response) {
+  //   const result = await this.authService.googleLogin(req.user);
+
+  //   const redirectUri = req.session.redirectUri || this.configService.get('DEFAULT_CLIENT_REDIRECT_URL');
+
+  //   this.setTokenCookie(res, result.tokens.accessToken, result.tokens.refreshToken);
+  //   return res.json({
+  //     success: true,
+  //     data: {
+  //       user: result.user,
+  //       redirectUri
+  //     }
+  //   });
+  // }
 
   @Public()
   @Get('google')
   @UseGuards(AuthGuard('google'))
   @ApiOperation({ summary: 'Google OAuth login' })
   @ApiQuery({ name: 'redirect_uri', required: false })
-  async googleAuth(@Query('redirect_uri') redirectUri: string, @Req() req: Request) {
+  async googleAuth(
+    @Query('redirect_uri') redirectUri: string, 
+    @Req() req: Request,
+    @Res() res: Response
+  ) {
+    // Enhanced logging
+    console.log('Google Auth Initiated');
+    console.log('Original redirect_uri:', redirectUri);
+    console.log('Session before:', req.session);
+
+    if (redirectUri) {
+      // Validate redirect URI before storing
+      if (!this.authService.validateRedirectUrl(redirectUri)) {
+        throw new BadRequestException('Invalid redirect URL');
+      }
+      
+      // Store in session with timestamp for debugging
+      req.session.authState = {
+        redirectUri,
+        timestamp: new Date().toISOString(),
+      };
+      await new Promise((resolve) => req.session.save(resolve));
+    }
+
+    // Log session after saving
+    console.log('Session after:', req.session);
+    
+    // // Continue with Google authentication
+    //  AuthGuard('google')(req, res, () => {
+    //   console.log('Google Auth Guard completed');
+    // });
   }
 
   @Public()
@@ -83,19 +148,37 @@ export class AuthController {
   @UseGuards(AuthGuard('google'))
   @ApiOperation({ summary: 'Google OAuth callback' })
   async googleAuthRedirect(@Req() req: Request, @Res() res: Response) {
+    // Enhanced logging
+    console.log('Google Callback Received');
+    console.log('Session in callback:', req.session);
+    
     const result = await this.authService.googleLogin(req.user);
+    
+    // Get redirect URI from session with fallback
+    const redirectUri = req.session?.authState?.redirectUri || 
+                       this.configService.get('DEFAULT_CLIENT_REDIRECT_URL');
+    
+    console.log('Final redirect URI:', redirectUri);
 
-    this.setTokenCookie(res, result.tokens.accessToken);
+    // Set tokens and clear session state
+    this.setTokenCookie(res, result.tokens.accessToken, result.tokens.refreshToken);
+    if (req.session?.authState) {
+      delete req.session.authState;
+      await new Promise((resolve) => req.session.save(resolve));
+    }
+
     return res.json({
       success: true,
-      user: result.user,
+      data: {
+        user: result.user,
+        redirectUri
+      }
     });
   }
 
+  @Public()
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
   @ApiOperation({ summary: 'User logout' })
   @ApiResponse({ status: 200, description: 'User successfully logged out' })
   async logout(@Res({ passthrough: true }) res: Response) {
@@ -113,11 +196,41 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Returns current user information' })
   async getCurrentUser(@Req() req: Request) {
     const userId = req.user['id']; // `sub` là định danh người dùng trong payload JWT
-    const user = await this.authService.getCurrentUser(userId);
-    return {
-      success: true,
-      user,
-    };
+    return await this.authService.getCurrentUser(userId);
+  }
+
+  @Public()
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Refresh access token using refresh token from database' })
+  @ApiResponse({ status: 200, description: 'New access token generated successfully' })
+  @ApiResponse({ status: 401, description: 'Invalid/Expired refresh token' })
+  async refresh(
+    @Req() req: Request,
+    @Res() res: Response
+  ) {
+    try {
+      // Get expired JWT from cookie and decode it to get userId
+      const refreshToken = req.cookies['refresh_token'];
+      if (!refreshToken) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid refresh token'
+        })
+      }
+      const result = await this.authService.refreshToken(refreshToken);
+      // Set new access token in cookie
+      this.setTokenCookie(res, result.accessToken, result.refreshToken);
+
+      return res.json({
+        success: true
+      });
+
+    } catch (error) {
+      // Clear cookie if refresh fails
+      this.clearTokenCookie(res);
+      throw error;
+    }
   }
 
   @Public()
@@ -147,18 +260,32 @@ export class AuthController {
     );
   }
 
-  private setTokenCookie(res: Response, token: string) {
-    res.cookie('sso_token', token, {
+  private setTokenCookie(res: Response, access_token: string, refresh_token: string) {
+    res.cookie('access_token', access_token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       domain: process.env.COOKIE_DOMAIN,
       maxAge: 15 * 60 * 1000, // 15 minutes
       sameSite: 'lax',
     });
+
+    res.cookie('refresh_token', refresh_token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      domain: process.env.COOKIE_DOMAIN,
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      sameSite: 'lax',
+    });
   }
 
   private clearTokenCookie(res: Response) {
-    res.clearCookie('sso_token', {
+    res.clearCookie('access_token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      domain: process.env.COOKIE_DOMAIN,
+      sameSite: 'lax',
+    });
+    res.clearCookie('refresh_token', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       domain: process.env.COOKIE_DOMAIN,

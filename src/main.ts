@@ -3,10 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import * as cookieParser from 'cookie-parser';
+const session = require('express-session');
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { setupSwagger } from './docs/swagger';
-import * as session from 'express-session';
+import { HttpExceptionFilter } from './filters/http-exception.filter';
+import { TransformInterceptor } from './interceptors/transform.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -16,14 +18,30 @@ async function bootstrap() {
   app.use(helmet());
   app.use(cookieParser());
 
+  app.use(
+    session({
+      secret: configService.get<string>('SESSION_SECRET') || 'default-secret',
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        secure: process.env.NODE_ENV === 'production',
+        httpOnly: true,
+        maxAge: 1000 * 60 * 60 * 24, // 24 hours
+      },
+    }),
+  );
+
   // Global validation pipe
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,
       transform: true,
+      whitelist: true,
       forbidNonWhitelisted: true,
-    })
+    }),
   );
+
+  app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalInterceptors(new TransformInterceptor());
 
   const corsConfig = configService.get<string>('CORS_ORIGINS')?.split(',') || [];
   app.enableCors({
@@ -33,26 +51,12 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   });
 
-  // app.use(
-  //   session({
-  //     secret: configService.get('SESSION_SECRET'),
-  //     resave: false,
-  //     saveUninitialized: false,
-  //     cookie: {
-  //       secure: process.env.NODE_ENV === 'production',
-  //       httpOnly: true,
-  //       maxAge: 1000 * 60 * 60 * 24 // 24 hours
-  //     }
-  //   })
-  // );
-
   // API prefix
   app.setGlobalPrefix('api');
 
-
   setupSwagger(app);
 
-  const port = configService.get('PORT') || 8080;
+  const port = configService.get<string>('PORT') || 8080;
   await app.listen(port);
 
   console.log(`Application is running on: http://localhost:${port}`);
