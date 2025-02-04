@@ -25,6 +25,7 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from './guard/jwt.guard';
 import { ConfigService } from '@nestjs/config';
 import 'src/types/session';
+import { GoogleUser } from './interfaces/oauth.interface';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -111,36 +112,15 @@ export class AuthController {
   @ApiOperation({ summary: 'Google OAuth login' })
   @ApiQuery({ name: 'redirect_uri', required: false })
   async googleAuth(
-    @Query('redirect_uri') redirectUri: string, 
+    @Query('redirect_uri') redirectUri: string,
     @Req() req: Request,
-    @Res() res: Response
   ) {
-    // Enhanced logging
-    console.log('Google Auth Initiated');
-    console.log('Original redirect_uri:', redirectUri);
-    console.log('Session before:', req.session);
-
     if (redirectUri) {
-      // Validate redirect URI before storing
+      // Validate redirect URL
       if (!this.authService.validateRedirectUrl(redirectUri)) {
         throw new BadRequestException('Invalid redirect URL');
       }
-      
-      // Store in session with timestamp for debugging
-      req.session.authState = {
-        redirectUri,
-        timestamp: new Date().toISOString(),
-      };
-      await new Promise((resolve) => req.session.save(resolve));
     }
-
-    // Log session after saving
-    console.log('Session after:', req.session);
-    
-    // // Continue with Google authentication
-    //  AuthGuard('google')(req, res, () => {
-    //   console.log('Google Auth Guard completed');
-    // });
   }
 
   @Public()
@@ -148,32 +128,15 @@ export class AuthController {
   @UseGuards(AuthGuard('google'))
   @ApiOperation({ summary: 'Google OAuth callback' })
   async googleAuthRedirect(@Req() req: Request, @Res() res: Response) {
-    // Enhanced logging
-    console.log('Google Callback Received');
-    console.log('Session in callback:', req.session);
+    const googleUser = req.user as GoogleUser;
+    const result = await this.authService.googleLogin(googleUser);
     
-    const result = await this.authService.googleLogin(req.user);
-    
-    // Get redirect URI from session with fallback
-    const redirectUri = req.session?.authState?.redirectUri || 
+    const redirectUri = googleUser.redirectUri || 
                        this.configService.get('DEFAULT_CLIENT_REDIRECT_URL');
     
-    console.log('Final redirect URI:', redirectUri);
-
-    // Set tokens and clear session state
     this.setTokenCookie(res, result.tokens.accessToken, result.tokens.refreshToken);
-    if (req.session?.authState) {
-      delete req.session.authState;
-      await new Promise((resolve) => req.session.save(resolve));
-    }
-
-    return res.json({
-      success: true,
-      data: {
-        user: result.user,
-        redirectUri
-      }
-    });
+    console.log({ redirectUri });
+    return res.redirect(`${redirectUri}?success=true`);
   }
 
   @Public()
