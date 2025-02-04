@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  sso-backend:
+    build: .
+    ports:
+      - "4007:4007"
+    env_file:
+      - .env.production
+    restart: unless-stopped

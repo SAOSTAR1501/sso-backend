@@ -15,7 +15,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         (request) => {
           let token = null;
           if (request && request.cookies) {
-            token = request.cookies['access_token'];
+            token = request.cookies['accessToken'];
           }
           return token;
         },
@@ -27,16 +27,17 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
-    const user = await this.userService.findById(payload.sub);
+    const user = await this.userService.findById(payload._id);
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
     return {
-      id: payload.sub,
+      id: payload._id,
       email: payload.email,
-      roles: payload.roles,
+      username: payload.username,
+      role: payload.role,
       fullName: payload.fullName,
-      avatar: payload.avatar,
+      avatarUrl: payload.avatarUrl,
     };
   }
 }

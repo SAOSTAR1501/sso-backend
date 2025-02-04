@@ -11,8 +11,23 @@ export class User extends Document {
   @Prop({ required: false })
   password: string;
 
+  @Prop({required: false})
+  username: string;
+
   @Prop({ required: true, unique: true }) // Trường email là bắt buộc và duy nhất
   email: string;
+
+  @Prop({ default: "" })
+  phoneNumber: string;
+
+  @Prop()
+  dateOfBirth: Date;
+
+  @Prop({ enum: ['Male', 'Female', 'Other'], default: 'Other' })
+  gender: string;
+
+  @Prop({ default: false })
+  isVerified: boolean;
 
   @Prop({
     type: {
@@ -32,23 +47,11 @@ export class User extends Document {
   @Prop({ default: "" })
   googleId: string;
 
-  @Prop({ default: ['user'] }) // Mặc định roles là 'user'
-  roles: string[];
+  @Prop({ default: 'customer' }) // Mặc định roles là 'user'
+  role: string;
 
   @Prop({ default: true }) // Trạng thái tài khoản, mặc định là active
   isActive: boolean;
-
-  @Prop({ default: '' }) // Trường resetPasswordToken nếu cần
-  resetPasswordToken: string;
-
-  @Prop({ default: '' }) // Thời gian hết hạn token
-  resetPasswordExpires: Date;
-
-  @Prop({ default: null }) // Refresh Token
-  refreshToken: string;
-
-  @Prop({ default: null }) // Thời gian tạo Refresh Token
-  refreshTokenCreatedAt: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

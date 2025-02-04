@@ -174,7 +174,7 @@ export class AuthController {
   ) {
     try {
       // Get expired JWT from cookie and decode it to get userId
-      const refreshToken = req.cookies['refresh_token'];
+      const refreshToken = req.cookies['refreshToken'];
       if (!refreshToken) {
         return res.status(400).json({
           success: false,
@@ -223,8 +223,8 @@ export class AuthController {
     );
   }
 
-  private setTokenCookie(res: Response, access_token: string, refresh_token: string) {
-    res.cookie('access_token', access_token, {
+  private setTokenCookie(res: Response, accessToken: string, refreshToken: string) {
+    res.cookie('accessToken', accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       domain: process.env.COOKIE_DOMAIN,
@@ -232,7 +232,7 @@ export class AuthController {
       sameSite: 'lax',
     });
 
-    res.cookie('refresh_token', refresh_token, {
+    res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       domain: process.env.COOKIE_DOMAIN,
@@ -242,13 +242,13 @@ export class AuthController {
   }
 
   private clearTokenCookie(res: Response) {
-    res.clearCookie('access_token', {
+    res.clearCookie('accessToken', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       domain: process.env.COOKIE_DOMAIN,
       sameSite: 'lax',
     });
-    res.clearCookie('refresh_token', {
+    res.clearCookie('refreshToken', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       domain: process.env.COOKIE_DOMAIN,

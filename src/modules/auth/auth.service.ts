@@ -37,7 +37,7 @@ export class AuthService {
       email: registerDto.email,
       fullName: registerDto.fullName,
       password: hashedPassword,
-      roles: ['user'],
+      role: 'customer',
       avatar: {
         url: `https://avatar.iran.liara.run/username?username=${registerDto.fullName}`,
         publicId: '',
@@ -53,7 +53,7 @@ export class AuthService {
         id: user._id,
         email: user.email,
         fullName: user.fullName,
-        roles: user.roles,
+        role: user.role,
       },
       tokens,
       redirectTo: redirectUrl ? this.buildRedirectUrl(redirectUrl, tokens) : null,
@@ -90,7 +90,7 @@ export class AuthService {
         id: user._id,
         email: user.email,
         fullName: user.fullName,
-        roles: user.roles,
+        role: user.role,
         avatar: user.avatar,
       },
       tokens,
@@ -115,7 +115,7 @@ export class AuthService {
           url: googleUser.picture,
           publicId: ''
         },
-        roles: ['user'],
+        role: 'customer',
       });
     } else if (!user.avatar?.url) {
       // Nếu người dùng tồn tại nhưng chưa có avatar, cập nhật avatar
@@ -137,7 +137,7 @@ export class AuthService {
         id: user._id,
         email: user.email,
         fullName: user.fullName,
-        roles: user.roles,
+        roles: user.role,
         picture: user.avatar.url,
       },
       tokens,
@@ -170,10 +170,13 @@ export class AuthService {
 
   private async generateTokens(user: any) {
     const payload = {
-      sub: user._id,
-      email: user.email,
-      roles: user.roles,
+      _id: user._id,
+      username: user.username,
       fullName: user.fullName,
+      email: user.email,
+      avatarUrl: user.avatar?.url || '',
+      role: user.role,
+      isActive: user.isActive || false
     };
 
     const [accessToken, refreshToken] = await Promise.all([
@@ -196,7 +199,7 @@ export class AuthService {
   private buildRedirectUrl(redirectUrl: string, tokens: { accessToken: string, refreshToken: string }) {
     const url = new URL(redirectUrl);
     // Sử dụng URL fragment thay vì query params để bảo mật token
-    url.hash = `access_token=${tokens.accessToken}&refresh_token=${tokens.refreshToken}`;
+    url.hash = `accessToken=${tokens.accessToken}&refreshToken=${tokens.refreshToken}`;
     return url.toString();
   }
 

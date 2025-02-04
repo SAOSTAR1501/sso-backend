@@ -5,10 +5,10 @@ import { User, UserDocument } from './user.schema';
 
 @Injectable()
 export class UserService {
-  constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
+  constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) { }
   async findById(userId: string): Promise<UserDocument | null> {
     return this.userModel.findById(userId)
-    .select('fullName email avatar googleId roles isActive').exec();
+      .select('fullName username email avatar googleId role isActive').exec();
   }
 
   async findByEmail(email: string): Promise<User | null> {
@@ -17,6 +17,8 @@ export class UserService {
 
   async create(user: Partial<User>): Promise<User> {
     const newUser = new this.userModel(user);
+    const username = newUser.email.split('@')[0];
+    newUser.username = username;
     return newUser.save();
   }
 
@@ -36,7 +38,7 @@ export class UserService {
     await this.userModel.findByIdAndDelete(userId);
   }
 
-  async getRefreshToken(userId: string){
+  async getRefreshToken(userId: string) {
     const user = await this.userModel.findById(userId).select('refreshToken').exec();
     return user;
   }
