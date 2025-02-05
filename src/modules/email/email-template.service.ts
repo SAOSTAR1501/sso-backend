@@ -48,7 +48,7 @@ export class EmailTemplateService {
         expiryMinutes: number;
     }): Promise<string> {
         const appName = this.configService.get<string>('APP_NAME', '1ai.one');
-        const appUrl = this.configService.get<string>('APP_URL', 'https://1ai.one');
+        const appUrl = this.configService.get<string>('APP_URL', 'https://accounts.1ai.one');
 
         return this.templates.passwordReset({
             ...data,
@@ -63,7 +63,7 @@ export class EmailTemplateService {
         expiryMinutes: number;
     }): Promise<string> {
         const appName = this.configService.get<string>('APP_NAME', '1ai.one');
-        const appUrl = this.configService.get<string>('APP_URL', 'https://1ai.one');
+        const appUrl = this.configService.get<string>('APP_URL', 'https://accounts.1ai.one');
 
         return this.templates.emailVerification({
             ...data,
@@ -75,7 +75,7 @@ export class EmailTemplateService {
 
     async getWelcomeTemplate(data: { name: string }): Promise<string> {
         const appName = this.configService.get<string>('APP_NAME', '1ai.one');
-        const appUrl = this.configService.get<string>('APP_URL', 'https://1ai.one');
+        const appUrl = this.configService.get<string>('APP_URL', 'https://accounts.1ai.one');
 
         return this.templates.welcome({
             ...data,
