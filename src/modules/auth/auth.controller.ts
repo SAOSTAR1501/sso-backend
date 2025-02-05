@@ -1,4 +1,3 @@
-// auth.controller.ts
 import {
   BadRequestException,
   Body,
@@ -26,6 +25,7 @@ import { JwtAuthGuard } from './guard/jwt.guard';
 import { ConfigService } from '@nestjs/config';
 import 'src/types/session';
 import { GoogleUser } from './interfaces/oauth.interface';
+import { GoogleGuard } from './guard/google.guard';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -74,49 +74,14 @@ export class AuthController {
     });
   }
 
-  // @Public()
-  // @Get('google')
-  // @UseGuards(AuthGuard('google'))
-  // @ApiOperation({ summary: 'Google OAuth login' })
-  // @ApiQuery({ name: 'redirect_uri', required: false })
-  // async googleAuth(@Query('redirect_uri') redirectUri: string, @Req() req: Request) {
-  //   console.log('Query Parameters:', req.query); // Debug log
-  //   if (redirectUri) {
-  //     console.log({ redirectUri });
-  //     req.session.redirectUri = redirectUri;
-  //   }
-  // }
-
-  // @Public()
-  // @Get('google/callback')
-  // @UseGuards(AuthGuard('google'))
-  // @ApiOperation({ summary: 'Google OAuth callback' })
-  // async googleAuthRedirect(@Req() req: Request, @Res() res: Response) {
-  //   const result = await this.authService.googleLogin(req.user);
-
-  //   const redirectUri = req.session.redirectUri || this.configService.get('DEFAULT_CLIENT_REDIRECT_URL');
-
-  //   this.setTokenCookie(res, result.tokens.accessToken, result.tokens.refreshToken);
-  //   return res.json({
-  //     success: true,
-  //     data: {
-  //       user: result.user,
-  //       redirectUri
-  //     }
-  //   });
-  // }
-
   @Public()
   @Get('google')
-  @UseGuards(AuthGuard('google'))
+  @UseGuards(GoogleGuard)
   @ApiOperation({ summary: 'Google OAuth login' })
   @ApiQuery({ name: 'redirect_uri', required: false })
-  async googleAuth(
-    @Query('redirect_uri') redirectUri: string,
-    @Req() req: Request,
-  ) {
+  async googleAuth(@Query('redirect_uri') redirectUri: string) {
     if (redirectUri) {
-      // Validate redirect URL
+      // Validate redirect URL before starting the OAuth flow
       if (!this.authService.validateRedirectUrl(redirectUri)) {
         throw new BadRequestException('Invalid redirect URL');
       }
@@ -125,18 +90,33 @@ export class AuthController {
 
   @Public()
   @Get('google/callback')
-  @UseGuards(AuthGuard('google'))
+  @UseGuards(GoogleGuard)
   @ApiOperation({ summary: 'Google OAuth callback' })
   async googleAuthRedirect(@Req() req: Request, @Res() res: Response) {
-    const googleUser = req.user as GoogleUser;
-    const result = await this.authService.googleLogin(googleUser);
-    
-    const redirectUri = googleUser.redirectUri || 
-                       this.configService.get('DEFAULT_CLIENT_REDIRECT_URL');
-    
-    this.setTokenCookie(res, result.tokens.accessToken, result.tokens.refreshToken);
-    console.log({ redirectUri });
-    return res.redirect(`${redirectUri}?success=true`);
+    try {
+      const googleUser = req.user as GoogleUser;
+      const result = await this.authService.googleLogin(googleUser);
+
+      // Use the redirect URI from the OAuth flow or fall back to default
+      const redirectUri = googleUser.redirectUri ||
+        this.configService.get('DEFAULT_CLIENT_REDIRECT_URL');
+
+      if (!redirectUri) {
+        throw new BadRequestException('No valid redirect URI available');
+      }
+
+      this.setTokenCookie(res, result.tokens.accessToken, result.tokens.refreshToken);
+
+      // Add error handling for the redirect
+      const redirectUrl = new URL(redirectUri);
+      redirectUrl.searchParams.append('success', 'true');
+
+      return res.redirect(redirectUrl.toString());
+    } catch (error) {
+      // Handle errors gracefully
+      const fallbackUrl = this.configService.get('ERROR_REDIRECT_URL');
+      return res.redirect(`${fallbackUrl}?error=${encodeURIComponent(error.message)}`);
+    }
   }
 
   @Public()
