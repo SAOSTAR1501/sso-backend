@@ -136,7 +136,6 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user information' })
-  @ApiResponse({ status: 200, description: 'Returns current user information' })
   async getCurrentUser(@Req() req: Request) {
     const userId = req.user['id']; // `sub` là định danh người dùng trong payload JWT
     return await this.authService.getCurrentUser(userId);
@@ -146,8 +145,6 @@ export class AuthController {
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Refresh access token using refresh token from database' })
-  @ApiResponse({ status: 200, description: 'New access token generated successfully' })
-  @ApiResponse({ status: 401, description: 'Invalid/Expired refresh token' })
   async refresh(
     @Req() req: Request,
     @Res() res: Response
@@ -180,7 +177,6 @@ export class AuthController {
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Initiate forgot password process' })
-  @ApiResponse({ status: 200, description: 'Password reset OTP sent if email exists' })
   async forgotPassword(
     @Body() body: ForgotPasswordDto
   ) {
@@ -191,8 +187,6 @@ export class AuthController {
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reset password using OTP' })
-  @ApiResponse({ status: 200, description: 'Password reset successful' })
-  @ApiResponse({ status: 400, description: 'Invalid OTP or password' })
   async resetPassword(
     @Body() body: ResetPasswordDto
   ) {

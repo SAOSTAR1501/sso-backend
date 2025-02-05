@@ -11,7 +11,7 @@ export class User extends Document {
   @Prop({ required: false })
   password: string;
 
-  @Prop({required: false})
+  @Prop({required: false, unique: true}) // Trường username là bắt buộc và duy nhất
   username: string;
 
   @Prop({ required: true, unique: true }) // Trường email là bắt buộc và duy nhất
