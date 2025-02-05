@@ -1,14 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User, UserDocument } from './user.schema';
+import { UpdateAvatarDto } from './dtos/update-avatar.dto';
+import { UpdateUserInfoDto } from './dtos/update-user-info.dto';
 
 @Injectable()
 export class UserService {
   constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) { }
   async findById(userId: string): Promise<UserDocument | null> {
     return this.userModel.findById(userId)
-      .select('fullName username email avatar googleId role isActive').exec();
+      .select('fullName phoneNumber username email avatar googleId role isActive').exec();
   }
 
   async findByEmail(email: string): Promise<User | null> {
@@ -26,6 +28,63 @@ export class UserService {
     return this.userModel.findByIdAndUpdate(userId, updateData, { new: true }).exec();
   }
 
+  async updateInfo(userId: string, updateData: UpdateUserInfoDto): Promise<any> {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Clean update data by removing undefined values
+    const cleanUpdateData = Object.entries(updateData)
+      .reduce((acc, [key, value]) => {
+        if (value !== undefined) {
+          acc[key] = value;
+        }
+        return acc;
+      }, {});
+
+    // Update the user
+    const updatedUser = await this.userModel.findByIdAndUpdate(
+      userId,
+      { $set: cleanUpdateData },
+      {
+        new: true,
+        runValidators: true,
+        select: '-password -__v'
+      }
+    ).exec();
+
+    if (!updatedUser) {
+      throw new NotFoundException('User not found after update');
+    }
+
+    return {
+      message: "User info updated successfully",
+      result: {
+        fullName: updatedUser.fullName,
+        username: updatedUser.username,
+        email: updatedUser.email,
+        phoneNumber: updatedUser.phoneNumber,
+        dateOfBirth: updatedUser.dateOfBirth,
+        gender: updatedUser.gender,
+        avatar: updatedUser.avatar
+      }
+    };
+  }
+
+  async updateAvatar(userId: string, avatar: UpdateAvatarDto) {
+    const user = await this.userModel.findByIdAndUpdate(userId, { avatar }, { new: true }).exec();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const {password, ...result} = user.toObject();
+    return {
+      message: "Avatar updated successfully",
+      result: result
+    }
+  }
+
   async updatePassword(userId: string, hashedPassword: string): Promise<User | null> {
     return this.userModel.findByIdAndUpdate(
       userId,
@@ -38,15 +97,15 @@ export class UserService {
     await this.userModel.findByIdAndDelete(userId);
   }
 
-  async getRefreshToken(userId: string) {
-    const user = await this.userModel.findById(userId).select('refreshToken').exec();
-    return user;
-  }
+  async getCurrentUser(userId: string) {
+    const user = await this.userModel.findById(userId).select('-password -__v'); // Phương thức findById trong UserService
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
 
-  async updateRefreshToken(userId: string, refreshToken: string): Promise<void> {
-    await this.userModel.findByIdAndUpdate(userId, {
-      refreshToken,
-      refreshTokenCreatedAt: new Date(),
-    });
+    return {
+      result: user,
+      message: 'Get user info successfully'
+    };
   }
 }
