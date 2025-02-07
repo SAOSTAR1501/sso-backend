@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User, UserDocument } from './user.schema';
@@ -10,13 +10,37 @@ export class UserService {
   constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) { }
   async findById(userId: string): Promise<UserDocument | null> {
     return this.userModel.findById(userId)
-      .select('fullName phoneNumber username email avatar googleId role isActive').exec();
+      .select('fullName phoneNumber dateOfBirth gender username email avatar googleId role isActive').exec();
   }
 
   async findByEmail(email: string): Promise<User | null> {
     return this.userModel.findOne({ email }).exec();
   }
 
+  async checkEmail(email: string): Promise<any> {
+    const user = await this.userModel.findOne({ email }).exec();
+    if (user) {
+      throw new ConflictException('Email is already in use');
+    }
+    return {
+      message: 'Email is available',
+      result: false,
+      statusCode: 200
+    };
+  }
+
+  async checkUsername(username: string): Promise<any> {
+    const user = await this.userModel.findOne({ username }).exec();
+    if (user) {
+      throw new ConflictException('Username is already in use');
+    }
+    return {
+      message: 'Username is available',
+      result: false,
+      statusCode: 200
+    }
+  }
+  
   async create(user: Partial<User>): Promise<User> {
     const newUser = new this.userModel(user);
     const username = newUser.email.split('@')[0];
@@ -78,7 +102,7 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
 
-    const {password, ...result} = user.toObject();
+    const { password, ...result } = user.toObject();
     return {
       message: "Avatar updated successfully",
       result: result

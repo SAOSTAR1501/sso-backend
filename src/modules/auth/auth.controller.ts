@@ -21,7 +21,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { JwtAuthGuard } from './guard/jwt.guard';
+import { LocalGuard } from './guard/local.guard';
 import { ConfigService } from '@nestjs/config';
 import 'src/types/session';
 import { GoogleUser } from './interfaces/oauth.interface';
@@ -47,8 +47,10 @@ export class AuthController {
     this.setTokenCookie(res, result.tokens.accessToken, result.tokens.refreshToken);
     return res.json({
       success: true,
-      user: result.user,
-      redirectTo: result.redirectTo
+      data: {
+        user: result.user,
+        redirectTo: result.redirectTo
+      }
     });
   }
 
@@ -133,7 +135,7 @@ export class AuthController {
   }
 
   @Get('me')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(LocalGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user information' })
   async getCurrentUser(@Req() req: Request) {

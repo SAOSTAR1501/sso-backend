@@ -5,8 +5,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PassportModule } from '@nestjs/passport';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { JwtStrategy } from './strategies/jwt.strategy';
-import { JwtAuthGuard } from './guard/jwt.guard';
+import { JwtStrategy } from './strategies/local.strategy';
+import { LocalGuard } from './guard/local.guard';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { UserModule } from '../user/user.module';
 import { OtpModule } from '../otp/otp.module';
@@ -35,7 +35,7 @@ import { EmailModule } from '../email/email.module';
     JwtStrategy,
     {
       provide: 'APP_GUARD',
-      useClass: JwtAuthGuard,
+      useClass: LocalGuard,
     },
     GoogleStrategy
   ],

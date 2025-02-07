@@ -2,27 +2,24 @@ import {
     Body,
     Controller,
     Get,
-    HttpStatus,
-    Patch,
     Post,
     Req,
-    UseGuards,
-    ValidationPipe,
-    ParseUUIDPipe,
-    HttpException
+    UseGuards
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags, ApiResponse } from '@nestjs/swagger';
-import { UserService } from './user.service';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Request } from 'express';
+import { LocalGuard } from '../auth/guard/local.guard';
 import { UpdateAvatarDto } from './dtos/update-avatar.dto';
 import { UpdateUserInfoDto } from './dtos/update-user-info.dto';
-import { Request } from 'express';
-import { JwtAuthGuard } from '../auth/guard/jwt.guard';
-import { User } from './user.schema';
+import { UserService } from './user.service';
+import { CheckEmailDto } from './dtos/check-email.dto';
+import { Public } from 'src/decorators/public.decorator';
+import { CheckUsernameDto } from './dtos/check-username.dto';
 
 @ApiTags('User Profile Management')
 @Controller('profile')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(LocalGuard)
 export class UserController {
     constructor(
         private readonly userService: UserService
@@ -58,5 +55,18 @@ export class UserController {
     ) {
         const userId = req.user['id'];
         return await this.userService.updateInfo(userId, updateData);
+    }
+
+    @Public()
+    @Post('check-email')
+    @ApiOperation({ summary: "Check if an email is already in use" })
+    async checkEmail(@Body() body: CheckEmailDto) {
+        return await this.userService.checkEmail(body.email);
+    }
+
+    @Post('check-username')
+    @ApiOperation({ summary: "Check if a username is already in use" })
+    async checkUsername(@Body() body: CheckUsernameDto) {
+        return await this.userService.checkUsername(body.username);
     }
 }
