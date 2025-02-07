@@ -13,9 +13,6 @@ export class RegisterDto {
   @ApiProperty({ example: 'Password123!' })
   @IsString()
   @MinLength(8)
-  @Matches(/((?=.*\d)|(?=.*\W+))(?![.\n])(?=.*[A-Z])(?=.*[a-z]).*$/, {
-    message: 'Password too weak - must contain uppercase, lowercase, number/special character'
-  })
   password: string;
 
   @ApiProperty({example: 'http://localhost:3000'})

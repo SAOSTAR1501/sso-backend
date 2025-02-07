@@ -54,6 +54,7 @@ export class AuthService {
         email: user.email,
         fullName: user.fullName,
         role: user.role,
+        avatar: user.avatar
       },
       tokens,
       redirectTo: redirectUrl ? this.buildRedirectUrl(redirectUrl, tokens) : null,

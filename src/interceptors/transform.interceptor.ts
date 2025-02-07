@@ -24,7 +24,7 @@ import {
         .handle()
         .pipe(
           map((data) => ({
-            statusCode: context.switchToHttp().getResponse().statusCode,
+            statusCode: data?.statusCode || context.switchToHttp().getResponse().statusCode,
             success: true,
             message: data?.message || null,
             data: data?.result || null,
