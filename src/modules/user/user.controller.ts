@@ -15,6 +15,8 @@ import { UserService } from './user.service';
 import { CheckEmailDto } from './dtos/check-email.dto';
 import { Public } from 'src/decorators/public.decorator';
 import { CheckUsernameDto } from './dtos/check-username.dto';
+import { User } from 'src/decorators/user.decorator';
+import { IUser } from 'src/interfaces/user.interface';
 
 @ApiTags('User Profile Management')
 @Controller('profile')
@@ -30,17 +32,17 @@ export class UserController {
         summary: 'Get current user information',
         description: 'Retrieves detailed information about the currently authenticated user'
     })
-    async getCurrentUser(@Req() req: Request) {
-        const userId = req.user['id'];
+    async getCurrentUser(@User() user: IUser) {
+        const userId = user.id;
         return await this.userService.getCurrentUser(userId);
     }
 
     @Post('avatar')
     async updateAvatar(
-        @Req() req: Request,
+        @User() user: IUser,
         @Body() avatar: UpdateAvatarDto
     ) {
-        const userId = req.user['id'];
+        const userId = user.id;
         return await this.userService.updateAvatar(userId, avatar);
     }
 
@@ -50,10 +52,10 @@ export class UserController {
         description: 'Updates the profile information for the currently authenticated user'
     })
     async updateInfo(
-        @Req() req: Request,
+        @User() user: IUser,
         @Body() updateData: UpdateUserInfoDto
     ) {
-        const userId = req.user['id'];
+        const userId = user.id;
         return await this.userService.updateInfo(userId, updateData);
     }
 

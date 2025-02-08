@@ -8,6 +8,9 @@ import { EmailService } from './modules/email/email.service';
 import { OtpModule } from './modules/otp/otp.module';
 import { UserModule } from './modules/user/user.module';
 import { EmailTemplateService } from './modules/email/email-template.service';
+import { SettingCategoryModule } from './modules/setting/setting-category/setting-category.module';
+import { SettingsModule } from './modules/setting/settings/settings.module';
+import { UserSettingsModule } from './modules/setting/user-settings/user-settings.module';
 
 @Module({
   imports: [
@@ -16,10 +19,17 @@ import { EmailTemplateService } from './modules/email/email-template.service';
       envFilePath: [
         `.env.${process.env.NODE_ENV || 'development'}`,
       ],
-    }), 
-    AuthModule, 
-    UserModule, 
-    DatabaseModule, OtpModule, EmailModule],
+    }),
+    AuthModule,
+    UserModule,
+    DatabaseModule,
+    OtpModule,
+    EmailModule,
+    SettingCategoryModule,
+    SettingsModule,
+    UserSettingsModule
+
+  ],
   controllers: [],
   providers: [],
 })

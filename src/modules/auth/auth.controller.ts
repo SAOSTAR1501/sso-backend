@@ -26,6 +26,8 @@ import { ConfigService } from '@nestjs/config';
 import 'src/types/session';
 import { GoogleUser } from './interfaces/oauth.interface';
 import { GoogleGuard } from './guard/google.guard';
+import { User } from 'src/decorators/user.decorator';
+import { IUser } from 'src/interfaces/user.interface';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -138,8 +140,8 @@ export class AuthController {
   @UseGuards(LocalGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user information' })
-  async getCurrentUser(@Req() req: Request) {
-    const userId = req.user['id']; // `sub` là định danh người dùng trong payload JWT
+  async getCurrentUser( @User() user: IUser) {
+    const userId = user.id;
     return await this.authService.getCurrentUser(userId);
   }
 
