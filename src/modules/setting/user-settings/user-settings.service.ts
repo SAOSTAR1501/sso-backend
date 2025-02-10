@@ -223,6 +223,7 @@ export class UserSettingsService {
         settingId: string,
         updateDto: UpdateUserSettingDto
     ): Promise<UserSettingDocument> {
+        console.log({ userId, settingId, updateDto });
         const session = await this.connection.startSession();
         try {
             let result;
@@ -240,7 +241,7 @@ export class UserSettingsService {
                 result = await this.userSettingModel.findOneAndUpdate(
                     { user: userId, setting: settingId },
                     { $set: updateDto },
-                    { new: true, session, populate: 'setting' }
+                    { new: true, upsert: true, session, populate: 'setting' }
                 );
 
                 if (!result) {
@@ -485,6 +486,117 @@ export class UserSettingsService {
         }
     }
 
+    // async findAllUserSettings(userId: string, query: QueryUserSettingDto): Promise<ResponseType<any>> {
+    //     // Get all available system settings with filters
+    //     const availableSettings = await this.settingsService.findAllAvailable(query);
+
+    //     // Build filter for user settings
+    //     const userFilter: FilterQuery<UserSetting> = { user: userId };
+    //     if (typeof query.isActive === 'boolean') {
+    //         userFilter.isActive = query.isActive;
+    //     }
+
+    //     // Get all user settings
+    //     const userSettings = await this.userSettingModel
+    //         .find(userFilter)
+    //         .populate({
+    //             path: 'setting',
+    //             populate: {
+    //                 path: 'category'
+    //             }
+    //         })
+    //         .lean()
+    //         .exec();
+
+    //     // Create a map of user settings for quick lookup
+    //     const userSettingsMap = new Map(
+    //         userSettings.map(userSetting => {
+    //             const settingId = (userSetting.setting as any)?._id?.toString();
+    //             return [settingId, userSetting];
+    //         })
+    //     );
+
+    //     // Merge system settings with user settings
+    //     const mergedSettings = availableSettings.map(systemSetting => {
+    //         const systemSettingId = (systemSetting as any)?._id?.toString();
+    //         const userSetting = userSettingsMap.get(systemSettingId);
+
+    //         // If user has customized this setting, return user's value
+    //         if (userSetting) {
+    //             return {
+    //                 _id: (userSetting as any)?._id,
+    //                 setting: systemSetting,
+    //                 value: userSetting.value,
+    //                 isActive: userSetting.isActive,
+    //                 isCustomized: true
+    //             };
+    //         }
+
+    //         // If no user setting exists, return system default
+    //         return {
+    //             setting: systemSetting,
+    //             value: systemSetting.value?.default,
+    //             isActive: true,
+    //             isCustomized: false
+    //         };
+    //     });
+
+    //     // Group settings by category
+    //     const groupedSettings = mergedSettings.reduce((acc, setting) => {
+    //         const categoryId = (setting.setting.category as any)?._id?.toString();
+    //         if (!acc[categoryId]) {
+    //             acc[categoryId] = {
+    //                 category: setting.setting.category,
+    //                 settings: []
+    //             };
+    //         }
+    //         acc[categoryId].settings.push(setting);
+    //         return acc;
+    //     }, {} as Record<string, any>);
+
+    //     // Convert to array and sort by category order
+    //     let settingResult = Object.values(groupedSettings).sort(
+    //         (a, b) => (a.category?.order || 0) - (b.category?.order || 0)
+    //     );
+
+    //     // Calculate total items
+    //     const total = mergedSettings.length;
+
+    //     // Apply pagination if needed
+    //     if (query.page !== undefined && query.pageSize !== undefined) {
+    //         const startIdx = query.page * query.pageSize;
+    //         let count = 0;
+    //         let itemsToSkip = startIdx;
+
+    //         settingResult = settingResult.reduce((acc: any[], group) => {
+    //             const groupCopy = { ...group };
+
+    //             if (count < query.pageSize) {
+    //                 if (itemsToSkip >= group.settings.length) {
+    //                     itemsToSkip -= group.settings.length;
+    //                 } else {
+    //                     groupCopy.settings = group.settings.slice(itemsToSkip, itemsToSkip + (query.pageSize - count));
+    //                     count += groupCopy.settings.length;
+    //                     itemsToSkip = 0;
+    //                     if (groupCopy.settings.length > 0) {
+    //                         acc.push(groupCopy);
+    //                     }
+    //                 }
+    //             }
+
+    //             return acc;
+    //         }, []);
+    //     }
+
+    //     return {
+    //         result: {
+    //             items: settingResult,
+    //             total
+    //         },
+    //         message: "User settings retrieved successfully"
+    //     };
+    // }
+
     async findAllUserSettings(userId: string, query: QueryUserSettingDto): Promise<ResponseType<any>> {
         // Get all available system settings with filters
         const availableSettings = await this.settingsService.findAllAvailable(query);
@@ -494,7 +606,7 @@ export class UserSettingsService {
         if (typeof query.isActive === 'boolean') {
             userFilter.isActive = query.isActive;
         }
-
+    
         // Get all user settings
         const userSettings = await this.userSettingModel
             .find(userFilter)
@@ -506,7 +618,7 @@ export class UserSettingsService {
             })
             .lean()
             .exec();
-
+    
         // Create a map of user settings for quick lookup
         const userSettingsMap = new Map(
             userSettings.map(userSetting => {
@@ -514,79 +626,49 @@ export class UserSettingsService {
                 return [settingId, userSetting];
             })
         );
-
+    
         // Merge system settings with user settings
         const mergedSettings = availableSettings.map(systemSetting => {
             const systemSettingId = (systemSetting as any)?._id?.toString();
             const userSetting = userSettingsMap.get(systemSettingId);
-
-            // If user has customized this setting, return user's value
-            if (userSetting) {
-                return {
-                    _id: (userSetting as any)?._id,
-                    setting: systemSetting,
-                    value: userSetting.value,
-                    isActive: userSetting.isActive,
-                    isCustomized: true
-                };
-            }
-
-            // If no user setting exists, return system default
-            return {
-                setting: systemSetting,
-                value: systemSetting.value?.default,
-                isActive: true,
-                isCustomized: false
+    
+            // Flatten the system setting structure
+            const flattenedSetting = {
+                ...systemSetting.toObject(),
+                _id: systemSetting._id,
+                key: systemSetting.key,
+                value: userSetting ? userSetting.value : systemSetting.value?.default,
+                label: systemSetting.label,
+                category: (systemSetting.category as any)?._id?.toString(),
+                dataType: systemSetting.dataType,
+                isSystem: systemSetting.isSystem,
+                isActive: userSetting ? userSetting.isActive : true,
+                isCustomized: !!userSetting,
+                options: systemSetting.options
             };
+    
+            return flattenedSetting;
         });
-
+    
         // Group settings by category
         const groupedSettings = mergedSettings.reduce((acc, setting) => {
-            const categoryId = (setting.setting.category as any)?._id?.toString();
+            const categoryId = setting.category;
             if (!acc[categoryId]) {
                 acc[categoryId] = {
-                    category: setting.setting.category,
+                    category: categoryId,
                     settings: []
                 };
             }
             acc[categoryId].settings.push(setting);
             return acc;
         }, {} as Record<string, any>);
-
+    
         // Convert to array and sort by category order
-        let settingResult = Object.values(groupedSettings).sort(
-            (a, b) => (a.category?.order || 0) - (b.category?.order || 0)
-        );
-
+        let settingResult = Object.values(groupedSettings);
+    
         // Calculate total items
         const total = mergedSettings.length;
-
-        // Apply pagination if needed
-        if (query.page !== undefined && query.pageSize !== undefined) {
-            const startIdx = query.page * query.pageSize;
-            let count = 0;
-            let itemsToSkip = startIdx;
-
-            settingResult = settingResult.reduce((acc: any[], group) => {
-                const groupCopy = { ...group };
-
-                if (count < query.pageSize) {
-                    if (itemsToSkip >= group.settings.length) {
-                        itemsToSkip -= group.settings.length;
-                    } else {
-                        groupCopy.settings = group.settings.slice(itemsToSkip, itemsToSkip + (query.pageSize - count));
-                        count += groupCopy.settings.length;
-                        itemsToSkip = 0;
-                        if (groupCopy.settings.length > 0) {
-                            acc.push(groupCopy);
-                        }
-                    }
-                }
-
-                return acc;
-            }, []);
-        }
-
+    
         return {
             result: {
                 items: settingResult,

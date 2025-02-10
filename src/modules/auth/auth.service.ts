@@ -44,6 +44,13 @@ export class AuthService {
       }
     });
 
+    try {
+      await this.emailService.sendWelcomeEmail(user.email, user.fullName);
+    } catch (error) {
+      // Log error but don't fail registration if email fails
+      console.error('Failed to send welcome email:', error);
+    }
+
     // Generate tokens
     const tokens = await this.generateTokens(user);
 

@@ -6,49 +6,66 @@
     <title>{{subject}}</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             line-height: 1.6;
             margin: 0;
             padding: 0;
-            background-color: #f4f4f4;
+            background-color: #E5E7EB;
+            color: #1F2937;
         }
         .container {
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
+            width: 100%;
+            margin: 24px auto;
             background-color: #ffffff;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            max-width: 768px;
         }
         .header {
+            background: #00A651;
+            padding: 24px;
             text-align: center;
-            padding: 20px 0;
+            position: relative;
+            width: 100%;
         }
-        .logo {
-            max-width: 150px;
-            height: auto;
+        .header-content {
+            width: 100%;
+            margin: 0 auto;
+            position: relative;
+            z-index: 2;
+        }
+        .header-text {
+            color: #ffffff;
+            font-size: 28px;
+            margin: 0;
+            padding: 0;
+            font-weight: 600;
+            letter-spacing: 0.2px;
         }
         .content {
-            padding: 20px;
+            padding: 32px 24px;
+            background: #ffffff;
+            width: 100%;
+            box-sizing: border-box;
         }
-        .button {
-            display: inline-block;
-            padding: 12px 24px;
-            background-color: #007bff;
-            color: #ffffff;
-            text-decoration: none;
-            border-radius: 4px;
-            margin: 20px 0;
-        }
-        .footer {
-            text-align: center;
-            padding: 20px;
-            color: #666666;
-            font-size: 12px;
+        @media (max-width: 768px) {
+            .container {
+                margin: 0;
+            }
+            .header-content {
+                padding: 16px;
+            }
+            .content {
+                padding: 24px 16px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <img src="{{appUrl}}/logo.png" alt="{{appName}}" class="logo">
+            <div class="header-content">
+                <h1 class="header-text">{{appName}}</h1>
+            </div>
         </div>
         <div class="content">

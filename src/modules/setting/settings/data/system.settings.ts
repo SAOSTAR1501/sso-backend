@@ -29,14 +29,14 @@ export const systemSettings: CreateSettingDto[] = [
             vi: 'Múi giờ hệ thống'
         },
         category: SettingCategoryEnum.SYSTEM,
-        dataType: SettingDataType.STRING,
-        options: {
-            availableTimezones: [
+        dataType: SettingDataType.SELECT,
+        options:
+            [
                 'Asia/Ho_Chi_Minh',
                 'Asia/Bangkok',
                 'UTC'
             ]
-        },
+        ,
         isSystem: true,
         isActive: true
     }
