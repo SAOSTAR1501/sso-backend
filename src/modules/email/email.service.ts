@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import { EmailTemplateService } from './email-template.service';
+import * as path from 'path';
 
 @Injectable()
 export class EmailService {
@@ -56,7 +57,7 @@ export class EmailService {
         try {
             const mailOptions = {
                 from: `"${this.configService.get<string>('MAIL_FROM_NAME')}" <${this.configService.get<string>('MAIL_FROM_ADDRESS')}>`,
-                ...options,
+                ...options
             };
 
             const info = await this.transporter.sendMail(mailOptions);

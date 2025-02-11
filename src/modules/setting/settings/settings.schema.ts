@@ -9,7 +9,7 @@ export type SettingDocument = Setting & Document;
   timestamps: true,
   collection: 'settings'
 })
-export class Setting {
+export class Setting extends Document {
   @Prop({
     required: true,
     unique: true,
@@ -31,6 +31,12 @@ export class Setting {
     default: {}
   })
   label: Record<string, string>;
+  @Prop({
+    type: MongooseSchema.Types.Mixed,
+    required: true,
+    default: {}
+  })
+  description: Record<string, string>;
 
   @Prop({
     type: String,
@@ -47,10 +53,10 @@ export class Setting {
   dataType: SettingDataType;
 
   @Prop({
-    type: MongooseSchema.Types.Mixed,
-    default: {}
+    type: [String],
+    default: []
   })
-  options: Record<string, any>;
+  options: string[];
 
   @Prop({ default: false })
   isSystem: boolean;

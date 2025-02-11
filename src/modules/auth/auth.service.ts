@@ -7,6 +7,7 @@ import * as bcrypt from 'bcrypt';
 import { UserService } from '../user/user.service';
 import { OtpService } from '../otp/otp.service';
 import { EmailService } from '../email/email.service';
+import { UserSettingsService } from '../setting/user-settings/user-settings.service';
 
 @Injectable()
 export class AuthService {
@@ -15,7 +16,8 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly otpService: OtpService,
-    private readonly emailService: EmailService
+    private readonly emailService: EmailService,
+    private readonly userSettingsService: UserSettingsService
   ) { }
 
   async register(registerDto: RegisterDto) {
@@ -43,6 +45,13 @@ export class AuthService {
         publicId: '',
       }
     });
+
+    try {
+      await this.emailService.sendWelcomeEmail(user.email, user.fullName);
+    } catch (error) {
+      // Log error but don't fail registration if email fails
+      console.error('Failed to send welcome email:', error);
+    }
 
     // Generate tokens
     const tokens = await this.generateTokens(user);
@@ -292,8 +301,13 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
+    const userSettingsSystem = await this.userSettingsService.getUserSettingsSystem(userId);
+
     return {
-      result: user,
+      result: {
+        ...user,
+        settings: userSettingsSystem
+      },
       message: 'Get user info successfully'
     };
   }

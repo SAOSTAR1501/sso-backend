@@ -1,17 +1,17 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsOptional, IsBoolean, IsMongoId, IsString } from 'class-validator';
+import { IsOptional, IsBoolean, IsString } from 'class-validator';
 
 export class QueryUserSettingDto {
     @ApiProperty({ required: false })
     @IsOptional()
-    @IsMongoId()
-    setting?: string;
+    @IsString()
+    settingKey?: string;
 
     @ApiProperty({ description: "setting category", required: false })
     @IsOptional()
     @IsString()
-    category?: string
+    category?: string;
 
     @ApiProperty({ required: false })
     @IsOptional()

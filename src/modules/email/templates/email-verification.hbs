@@ -1,8 +1,22 @@
 {{> header}}
 <h1>Verify Your Email Address</h1>
-<p>Thank you for registering with {{appName}}. To complete your registration, please use the following verification code:</p>
-<h2 style="text-align: center; font-size: 32px; letter-spacing: 8px; padding: 20px;">{{otp}}</h2>
-<p>This verification code will expire in {{expiryMinutes}} minutes.</p>
-<p>If you did not create an account with us, please ignore this email.</p>
-<p>Best regards,<br>The {{appName}} Team</p>
+
+<p>Thank you for registering with {{appName}}! To ensure the security of your account and access all features, please verify your email address using the code below:</p>
+
+<div class="otp-container">
+    <div class="otp-code">{{otp}}</div>
+    <p style="margin: 16px 0 0 0; font-size: 14px; color: #6B7280;">
+        This code will expire in <span class="highlight">{{expiryMinutes}} minutes</span>
+    </p>
+</div>
+
+<div style="background: #F0FDF4; border: 1px solid #DCFCE7; border-radius: 8px; padding: 16px; margin: 24px 0;">
+    <p style="color: #166534; margin: 0; font-size: 14px;">
+        <strong>Quick Tip:</strong> For the best experience, please verify your email address before exploring our platform.
+    </p>
+</div>
+
+<p>If you did not create an account with {{appName}}, you can safely ignore this email.</p>
+
+<p style="margin-top: 32px;">Best regards,<br><strong style="color: #1E40AF;">The {{appName}} Team</strong></p>
 {{> footer}}

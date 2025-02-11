@@ -148,7 +148,7 @@ export class AuthController {
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Refresh access token using refresh token from database' })
+  @ApiOperation({ summary: 'Refresh token' })
   async refresh(
     @Req() req: Request,
     @Res() res: Response

@@ -1,7 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsObject, IsEnum, IsOptional, IsBoolean, IsMongoId } from 'class-validator';
+import { IsString, IsNotEmpty, IsObject, IsEnum, IsOptional, IsBoolean } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { Types } from 'mongoose';
 import { SettingDataType } from '../data/settings-data-type.enum';
 
 export class CreateSettingDto {
@@ -20,6 +19,11 @@ export class CreateSettingDto {
     @IsObject()
     @IsNotEmpty()
     label: Record<string, string>;
+    
+    @ApiProperty({ description: 'Setting label in different languages' })
+    @IsObject()
+    @IsOptional()
+    description?: Record<string, string>;
 
     @ApiProperty({ description: 'Category ID' })
     @IsString()
@@ -31,10 +35,9 @@ export class CreateSettingDto {
     @IsNotEmpty()
     dataType: SettingDataType;
 
-    @ApiProperty({ description: 'Setting options' })
-    @IsObject()
+    @ApiProperty({ description: 'Setting options (array of strings or object)' })
     @IsOptional()
-    options?: Record<string, any>;
+    options?: string[] | Record<string, any>;
 
     @ApiProperty({ description: 'Is system setting' })
     @IsBoolean()

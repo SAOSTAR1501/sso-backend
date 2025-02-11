@@ -139,8 +139,8 @@ export class SettingsService {
         };
 
         if (query) {
-            if (query.setting) {
-                filter._id = query.setting;
+            if (query.settingKey) {
+                filter.key = query.settingKey;
             }
 
             if (query.category) {
@@ -155,9 +155,21 @@ export class SettingsService {
         // Fetch settings with filter
         const settings = await this.settingModel
             .find(filter)
+            .select({
+                _id: 1,
+                key: 1,
+                value: 1,
+                label: 1,
+                category: 1,
+                dataType: 1,
+                isSystem: 1,
+                isActive: 1,
+                options: 1,
+            })
             // .populate('category')
             .sort({ 'category.order': 1, key: 1 })
-            .exec();
+            .exec()
+            ;
 
         return settings;
     }

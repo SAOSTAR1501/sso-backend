@@ -1,16 +1,19 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User, UserDocument } from './user.schema';
 import { UpdateAvatarDto } from './dtos/update-avatar.dto';
 import { UpdateUserInfoDto } from './dtos/update-user-info.dto';
+import { ResponseType } from 'src/interfaces/response.interface';
+import * as bcrypt from 'bcrypt';
+import { UpdatePasswordDto } from './dtos/update-password.dto';
 
 @Injectable()
 export class UserService {
   constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) { }
   async findById(userId: string): Promise<UserDocument | null> {
     return this.userModel.findById(userId)
-      .select('fullName phoneNumber dateOfBirth gender username email avatar googleId role isActive').exec();
+      .select('fullName phoneNumber dateOfBirth gender username email avatar googleId role isActive').lean().exec();
   }
 
   async findByEmail(email: string): Promise<User | null> {
@@ -109,12 +112,28 @@ export class UserService {
     }
   }
 
-  async updatePassword(userId: string, hashedPassword: string): Promise<User | null> {
-    return this.userModel.findByIdAndUpdate(
+  async updatePassword(userId: string, passwords: UpdatePasswordDto): Promise<ResponseType<any>> {
+    const user = await this.userModel.findById(userId);
+    const oldPassword = await bcrypt.compare(passwords.oldPassword, user.password);
+    if (!oldPassword) {
+      throw new BadRequestException('Old password is incorrect');
+    }
+
+    if(passwords.oldPassword === passwords.newPassword) {
+      throw new ConflictException('New password cannot be the same as the old password');
+    }
+
+    const hashedPassword = await bcrypt.hash(passwords.newPassword, 10);
+    await this.userModel.findByIdAndUpdate(
       userId,
       { password: hashedPassword },
       { new: true },
     );
+
+    return {
+      message: "Password updated successfully",
+      success: true
+    }
   }
 
   async delete(userId: string): Promise<void> {
