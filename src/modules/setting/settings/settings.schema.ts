@@ -31,6 +31,12 @@ export class Setting extends Document {
     default: {}
   })
   label: Record<string, string>;
+  @Prop({
+    type: MongooseSchema.Types.Mixed,
+    required: true,
+    default: {}
+  })
+  description: Record<string, string>;
 
   @Prop({
     type: String,

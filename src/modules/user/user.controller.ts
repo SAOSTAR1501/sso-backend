@@ -17,6 +17,7 @@ import { Public } from 'src/decorators/public.decorator';
 import { CheckUsernameDto } from './dtos/check-username.dto';
 import { User } from 'src/decorators/user.decorator';
 import { IUser } from 'src/interfaces/user.interface';
+import { UpdatePasswordDto } from './dtos/update-password.dto';
 
 @ApiTags('User Profile Management')
 @Controller('profile')
@@ -57,6 +58,15 @@ export class UserController {
     ) {
         const userId = user.id;
         return await this.userService.updateInfo(userId, updateData);
+    }
+
+    @Post('password')
+    async updatePassword(
+        @User() user: IUser,
+        @Body() passwords: UpdatePasswordDto
+    ) {
+        const userId = user.id;
+        return await this.userService.updatePassword(userId, passwords);
     }
 
     @Public()

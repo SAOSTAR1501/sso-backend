@@ -13,10 +13,10 @@ export const appearanceSettings: CreateSettingDto[] = [
             vi: 'Chế độ giao diện'
         },
         category: SettingCategoryEnum.APPEARANCE,
-        dataType: SettingDataType.STRING,
-        options: {
-            availableThemes: ['light', 'dark', 'system']
-        },
+        dataType: SettingDataType.SELECT,
+        options: 
+            ['light', 'dark', 'system']
+        ,
         isSystem: true,
         isActive: true
     },

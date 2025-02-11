@@ -1,28 +1,26 @@
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import {
     BadRequestException,
-    Injectable,
     Inject,
+    Injectable,
+    InternalServerErrorException,
     Logger,
-    NotFoundException,
-    InternalServerErrorException
+    NotFoundException
 } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Cache } from 'cache-manager';
-import { Connection, FilterQuery, Model } from 'mongoose';
-import { SettingsService } from '../settings/settings.service';
-import { CreateUserSettingDto } from './dto/create-user-settings.dto';
-import { QueryUserSettingDto } from './dto/query-user-settings.dto';
-import { IUserSetting } from './user-settings.interface';
-import { UserSetting, UserSettingDocument } from './user-settings.schema';
-import { UpdateUserSettingDto } from './dto/update-user-settins.dto';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Connection, Model } from 'mongoose';
 import { ResponseType } from 'src/interfaces/response.interface';
+import { SettingsService } from '../settings/settings.service';
+import { QueryUserSettingDto } from './dto/query-user-settings.dto';
+import { UpdateUserSettingDto } from './dto/update-user-settings.dto';
+import { ISettingValue } from './user-settings.interface';
+import { UserSetting, UserSettingDocument } from './user-settings.schema';
 
 @Injectable()
 export class UserSettingsService {
     private readonly logger = new Logger(UserSettingsService.name);
     private readonly CACHE_TTL = 300000; // 5 minutes in milliseconds
-    private readonly BATCH_SIZE = 100; // Batch size for bulk operations
 
     constructor(
         @InjectModel(UserSetting.name)
@@ -32,22 +30,22 @@ export class UserSettingsService {
         @Inject(CACHE_MANAGER) private cacheManager: Cache
     ) { }
 
-    private getCacheKey(userId: string, settingId: string): string {
-        return `user_setting:${userId}:${settingId}`;
+    private getCacheKey(userId: string): string {
+        return `user_settings:${userId}`;
     }
 
-    async createOrUpdate(
+    async update(
         userId: string,
-        createDto: CreateUserSettingDto
+        updateDto: UpdateUserSettingDto
     ): Promise<UserSettingDocument> {
         try {
             // Verify setting exists and validate value
-            const setting = await this.settingsService.findOne(createDto.setting);
+            const setting = await this.settingsService.findByKey(updateDto.settingKey);
             if (!setting) {
-                throw new NotFoundException(`Setting ${createDto.setting} not found`);
+                throw new NotFoundException(`Setting ${updateDto.settingKey} not found`);
             }
 
-            await this.validateSettingValue(setting, createDto.value);
+            await this.validateSettingValue(setting, updateDto.value);
 
             // Start transaction
             const session = await this.connection.startSession();
@@ -55,27 +53,26 @@ export class UserSettingsService {
 
             try {
                 await session.withTransaction(async () => {
-                    // Find or create setting
-                    const userSetting = await this.userSettingModel.findOneAndUpdate(
-                        {
-                            user: userId,
-                            setting: createDto.setting
-                        },
+                    // Find or create user settings document
+                    const settingValue: ISettingValue = {
+                        value: updateDto.value,
+                        isActive: updateDto.isActive ?? true,
+                        isCustomized: true
+                    };
+
+                    result = await this.userSettingModel.findOneAndUpdate(
+                        { user: userId },
                         {
                             $set: {
-                                value: createDto.value,
-                                isActive: createDto.isActive ?? true
+                                [`settings.${updateDto.settingKey}`]: settingValue
                             }
                         },
                         {
                             new: true,
                             upsert: true,
-                            session,
-                            populate: 'setting'
+                            session
                         }
                     );
-
-                    result = userSetting;
                 });
             } finally {
                 await session.endSession();
@@ -83,7 +80,7 @@ export class UserSettingsService {
 
             // Update cache
             await this.cacheManager.set(
-                this.getCacheKey(userId, createDto.setting),
+                this.getCacheKey(userId),
                 result.toObject(),
                 this.CACHE_TTL
             );
@@ -91,209 +88,221 @@ export class UserSettingsService {
             return result;
         } catch (error) {
             this.logger.error(
-                `Error in createOrUpdate for user ${userId}: ${error.message}`,
-                error.stack
-            );
-            if (error instanceof NotFoundException || error instanceof BadRequestException) {
-                throw error;
-            }
-            throw new InternalServerErrorException('Error creating/updating user setting');
-        }
-    }
-
-    async bulkUpdate(
-        userId: string,
-        settings: CreateUserSettingDto[]
-    ): Promise<UserSettingDocument[]> {
-        const session = await this.connection.startSession();
-        try {
-            let results: UserSettingDocument[] = [];
-
-            await session.withTransaction(async () => {
-                // Process in batches to avoid memory issues
-                for (let i = 0; i < settings.length; i += this.BATCH_SIZE) {
-                    const batch = settings.slice(i, i + this.BATCH_SIZE);
-
-                    // Validate all settings in batch
-                    await Promise.all(
-                        batch.map(async (setting) => {
-                            const settingConfig = await this.settingsService.findOne(setting.setting);
-                            if (!settingConfig) {
-                                throw new NotFoundException(`Setting ${setting.setting} not found`);
-                            }
-                            await this.validateSettingValue(settingConfig, setting.value);
-                        })
-                    );
-
-                    const operations = batch.map(setting => ({
-                        updateOne: {
-                            filter: {
-                                user: userId,
-                                setting: setting.setting
-                            },
-                            update: {
-                                $set: {
-                                    value: setting.value,
-                                    isActive: setting.isActive ?? true
-                                }
-                            },
-                            upsert: true
-                        }
-                    }));
-
-                    await this.userSettingModel.bulkWrite(operations, { session });
-                }
-
-                // Fetch updated documents
-                results = await this.userSettingModel
-                    .find({
-                        user: userId,
-                        setting: { $in: settings.map(s => s.setting) }
-                    })
-                    .populate('setting')
-                    .session(session)
-                    .exec();
-            });
-
-            // Update cache for all settings
-            await Promise.all(
-                results.map(setting =>
-                    this.cacheManager.set(
-                        this.getCacheKey(userId, setting.setting.toString()),
-                        setting.toObject(),
-                        this.CACHE_TTL
-                    )
-                )
-            );
-
-            return results;
-        } catch (error) {
-            this.logger.error(
-                `Error in bulkUpdate for user ${userId}: ${error.message}`,
-                error.stack
-            );
-            if (error instanceof NotFoundException || error instanceof BadRequestException) {
-                throw error;
-            }
-            throw new InternalServerErrorException('Error performing bulk update');
-        } finally {
-            await session.endSession();
-        }
-    }
-
-    async findAll(
-        userId: string,
-        query: QueryUserSettingDto
-    ): Promise<{ items: UserSettingDocument[]; total: number }> {
-        try {
-            const { setting, isActive, page = 0, pageSize = 10 } = query;
-            const filter: FilterQuery<UserSetting> = { user: userId };
-
-            if (setting) {
-                filter.setting = setting;
-            }
-
-            if (typeof isActive === 'boolean') {
-                filter.isActive = isActive;
-            }
-
-            const [items, total] = await Promise.all([
-                this.userSettingModel
-                    .find(filter)
-                    .populate('setting')
-                    .sort({ createdAt: -1 })
-                    .skip(page * pageSize)
-                    .limit(pageSize)
-                    .exec(),
-                this.userSettingModel.countDocuments(filter)
-            ]);
-
-            return { items, total };
-        } catch (error) {
-            this.logger.error(
-                `Error in findAll for user ${userId}: ${error.message}`,
-                error.stack
-            );
-            throw new InternalServerErrorException('Error retrieving user settings');
-        }
-    }
-
-    async update(
-        userId: string,
-        settingId: string,
-        updateDto: UpdateUserSettingDto
-    ): Promise<UserSettingDocument> {
-        console.log({ userId, settingId, updateDto });
-        const session = await this.connection.startSession();
-        try {
-            let result;
-
-            await session.withTransaction(async () => {
-                const setting = await this.settingsService.findOne(settingId);
-                if (!setting) {
-                    throw new NotFoundException(`Setting ${settingId} not found`);
-                }
-
-                if (updateDto.value !== undefined) {
-                    await this.validateSettingValue(setting, updateDto.value);
-                }
-
-                result = await this.userSettingModel.findOneAndUpdate(
-                    { user: userId, setting: settingId },
-                    { $set: updateDto },
-                    { new: true, upsert: true, session, populate: 'setting' }
-                );
-
-                if (!result) {
-                    throw new NotFoundException('User setting not found');
-                }
-
-                // Update cache
-                await this.cacheManager.set(
-                    this.getCacheKey(userId, settingId),
-                    result.toObject(),
-                    this.CACHE_TTL
-                );
-            });
-
-            return result;
-        } catch (error) {
-            this.logger.error(
-                `Error in update for user ${userId}, setting ${settingId}: ${error.message}`,
+                `Error in update for user ${userId}: ${error.message}`,
                 error.stack
             );
             if (error instanceof NotFoundException || error instanceof BadRequestException) {
                 throw error;
             }
             throw new InternalServerErrorException('Error updating user setting');
-        } finally {
-            await session.endSession();
         }
     }
 
-    async resetToDefault(
-        userId: string,
-        settingId: string
-    ): Promise<UserSettingDocument> {
+    async findAllUserSettings(userId: string, query: QueryUserSettingDto): Promise<ResponseType<any>> {
         try {
-            const setting = await this.settingsService.findOne(settingId);
-            if (!setting) {
-                throw new NotFoundException(`Setting ${settingId} not found`);
-            }
+            // Get all available system settings with filters
+            const availableSettings = await this.settingsService.findAllAvailable(query);
 
-            return this.createOrUpdate(userId, {
-                setting: settingId,
-                value: setting.value.default
+            // Get user's settings document
+            const userSettingsDoc = await this.userSettingModel
+                .findOne({ user: userId })
+                .lean()
+                .exec();
+
+            // Helper function to get user setting value
+            const getUserSetting = (settingKey: string): ISettingValue | undefined => {
+                // First try direct key match
+                const directSetting = userSettingsDoc?.settings?.[settingKey];
+                if (directSetting && 'value' in directSetting) {
+                    return directSetting as ISettingValue;
+                }
+
+                // Try hierarchical path
+                const parts = settingKey.split('.');
+                let current: any = userSettingsDoc?.settings;
+
+                for (const part of parts) {
+                    current = current?.[part];
+                    if (!current) break;
+                }
+
+                // Check if the final value matches ISettingValue structure
+                if (current && typeof current === 'object' && 'value' in current) {
+                    return {
+                        value: current.value,
+                        isActive: current.isActive ?? true,
+                        isCustomized: true
+                    };
+                }
+
+                return undefined;
+            };
+
+            // Merge system settings with user settings
+            const mergedSettings = availableSettings.map(systemSetting => {
+                const settingKey = systemSetting.key;
+                const userSetting = getUserSetting(settingKey);
+
+                // Create flattened setting object
+                const flattenedSetting = {
+                    key: settingKey,
+                    value: userSetting?.value ?? systemSetting.value?.default,
+                    defaultValue: systemSetting.value?.default,
+                    label: systemSetting.label,
+                    category: systemSetting.category.toString(),
+                    dataType: systemSetting.dataType,
+                    isSystem: systemSetting.isSystem,
+                    isActive: userSetting?.isActive ?? true,
+                    isCustomized: !!userSetting,
+                    options: systemSetting.options
+                };
+
+                return flattenedSetting;
             });
+
+            // Apply setting key filter if provided
+            const filteredSettings = query.settingKey
+                ? mergedSettings.filter(setting => setting.key === query.settingKey)
+                : mergedSettings;
+
+            // Group settings by category
+            const groupedSettings = filteredSettings.reduce((acc, setting) => {
+                const categoryId = setting.category;
+                if (!acc[categoryId]) {
+                    acc[categoryId] = {
+                        category: categoryId,
+                        settings: []
+                    };
+                }
+                acc[categoryId].settings.push(setting);
+                return acc;
+            }, {} as Record<string, { category: string; settings: any[] }>);
+
+            // Convert grouped settings to array
+            const settingResult = Object.values(groupedSettings);
+
+            return {
+                result: {
+                    items: settingResult,
+                    total: filteredSettings.length
+                },
+                message: "User settings retrieved successfully"
+            };
         } catch (error) {
             this.logger.error(
-                `Error in resetToDefault for user ${userId}, setting ${settingId}: ${error.message}`,
+                `Error in findAllUserSettings for user ${userId}: ${error.message}`,
                 error.stack
             );
-            if (error instanceof NotFoundException) {
-                throw error;
+            throw new InternalServerErrorException('Error retrieving user settings');
+        }
+    }
+
+    async resetAllSettings(userId: string): Promise<ResponseType<any>> {
+        try {
+            // Start transaction
+            const session = await this.connection.startSession();
+            let result;
+
+            try {
+                await session.withTransaction(async () => {
+                    // Delete all user settings by setting empty settings object
+                    result = await this.userSettingModel.findOneAndUpdate(
+                        { user: userId },
+                        { $set: { settings: {} } },
+                        {
+                            new: true,
+                            session
+                        }
+                    );
+
+                    // If no document exists, create one with empty settings
+                    if (!result) {
+                        result = await this.userSettingModel.create([{
+                            user: userId,
+                            settings: {}
+                        }], { session });
+                        result = result[0];
+                    }
+                });
+            } finally {
+                await session.endSession();
             }
-            throw new InternalServerErrorException('Error resetting user setting');
+
+            // Clear cache
+            await this.cacheManager.del(this.getCacheKey(userId));
+
+            // Get default settings to return in response
+            const defaultSettings = await this.findAllUserSettings(userId, {});
+
+            return {
+                result: defaultSettings.result,
+                message: "All settings have been reset to default values"
+            };
+        } catch (error) {
+            this.logger.error(
+                `Error in resetAllSettings for user ${userId}: ${error.message}`,
+                error.stack
+            );
+            throw new InternalServerErrorException('Error resetting user settings');
+        }
+    }
+
+    async getUserSettingsSystem(userId: string) {
+        try {
+            // Find user's settings document
+            const userSettingsDoc = await this.userSettingModel
+                .findOne({ user: userId })
+                .lean()
+                .exec();
+    
+            // Helper function to get user setting value (same as in findAllUserSettings method)
+            const getUserSetting = (settingKey: string): ISettingValue | undefined => {
+                // First try direct key match
+                const directSetting = userSettingsDoc?.settings?.[settingKey];
+                if (directSetting && 'value' in directSetting) {
+                    return directSetting as ISettingValue;
+                }
+    
+                // Try hierarchical path
+                const parts = settingKey.split('.');
+                let current: any = userSettingsDoc?.settings;
+    
+                for (const part of parts) {
+                    current = current?.[part];
+                    if (!current) break;
+                }
+    
+                // Check if the final value matches ISettingValue structure
+                if (current && typeof current === 'object' && 'value' in current) {
+                    return {
+                        value: current.value,
+                        isActive: current.isActive ?? true,
+                        isCustomized: true
+                    };
+                }
+    
+                return undefined;
+            };
+    
+            // Retrieve specific settings using the system settings service
+            const languageSetting = await this.settingsService.findByKey('language.user_interface');
+            const themeSetting = await this.settingsService.findByKey('appearance.theme');
+    
+            // Get user's specific settings or use default values
+            const userLanguage = getUserSetting('language.user_interface')?.value ?? 
+                                 languageSetting?.value?.default ?? 'vi';
+            const userTheme = getUserSetting('appearance.theme')?.value ?? 
+                              themeSetting?.value?.default ?? 'light';
+    
+            return {
+                language: userLanguage,
+                theme: userTheme
+            };
+        } catch (error) {
+            return {
+                language: 'vi',
+                theme: 'light'
+            };
         }
     }
 
@@ -449,7 +458,23 @@ export class UserSettingsService {
                         throw new BadRequestException('Value must be a valid URL');
                     }
                     break;
+                case 'SELECT':
+                    if (typeof value !== 'string') {
+                        throw new BadRequestException('Value must be a string for SELECT type');
+                    }
 
+                    // Check if options array exists
+                    if (!setting.options || !Array.isArray(setting.options)) {
+                        throw new BadRequestException('SELECT type requires an array of options');
+                    }
+
+                    // Validate that the value is one of the available options
+                    if (!setting.options.includes(value)) {
+                        throw new BadRequestException(
+                            `Value must be one of: ${setting.options.join(', ')}`
+                        );
+                    }
+                    break;
                 default:
                     throw new BadRequestException(`Unsupported data type: ${setting.dataType}`);
             }
@@ -486,195 +511,4 @@ export class UserSettingsService {
         }
     }
 
-    // async findAllUserSettings(userId: string, query: QueryUserSettingDto): Promise<ResponseType<any>> {
-    //     // Get all available system settings with filters
-    //     const availableSettings = await this.settingsService.findAllAvailable(query);
-
-    //     // Build filter for user settings
-    //     const userFilter: FilterQuery<UserSetting> = { user: userId };
-    //     if (typeof query.isActive === 'boolean') {
-    //         userFilter.isActive = query.isActive;
-    //     }
-
-    //     // Get all user settings
-    //     const userSettings = await this.userSettingModel
-    //         .find(userFilter)
-    //         .populate({
-    //             path: 'setting',
-    //             populate: {
-    //                 path: 'category'
-    //             }
-    //         })
-    //         .lean()
-    //         .exec();
-
-    //     // Create a map of user settings for quick lookup
-    //     const userSettingsMap = new Map(
-    //         userSettings.map(userSetting => {
-    //             const settingId = (userSetting.setting as any)?._id?.toString();
-    //             return [settingId, userSetting];
-    //         })
-    //     );
-
-    //     // Merge system settings with user settings
-    //     const mergedSettings = availableSettings.map(systemSetting => {
-    //         const systemSettingId = (systemSetting as any)?._id?.toString();
-    //         const userSetting = userSettingsMap.get(systemSettingId);
-
-    //         // If user has customized this setting, return user's value
-    //         if (userSetting) {
-    //             return {
-    //                 _id: (userSetting as any)?._id,
-    //                 setting: systemSetting,
-    //                 value: userSetting.value,
-    //                 isActive: userSetting.isActive,
-    //                 isCustomized: true
-    //             };
-    //         }
-
-    //         // If no user setting exists, return system default
-    //         return {
-    //             setting: systemSetting,
-    //             value: systemSetting.value?.default,
-    //             isActive: true,
-    //             isCustomized: false
-    //         };
-    //     });
-
-    //     // Group settings by category
-    //     const groupedSettings = mergedSettings.reduce((acc, setting) => {
-    //         const categoryId = (setting.setting.category as any)?._id?.toString();
-    //         if (!acc[categoryId]) {
-    //             acc[categoryId] = {
-    //                 category: setting.setting.category,
-    //                 settings: []
-    //             };
-    //         }
-    //         acc[categoryId].settings.push(setting);
-    //         return acc;
-    //     }, {} as Record<string, any>);
-
-    //     // Convert to array and sort by category order
-    //     let settingResult = Object.values(groupedSettings).sort(
-    //         (a, b) => (a.category?.order || 0) - (b.category?.order || 0)
-    //     );
-
-    //     // Calculate total items
-    //     const total = mergedSettings.length;
-
-    //     // Apply pagination if needed
-    //     if (query.page !== undefined && query.pageSize !== undefined) {
-    //         const startIdx = query.page * query.pageSize;
-    //         let count = 0;
-    //         let itemsToSkip = startIdx;
-
-    //         settingResult = settingResult.reduce((acc: any[], group) => {
-    //             const groupCopy = { ...group };
-
-    //             if (count < query.pageSize) {
-    //                 if (itemsToSkip >= group.settings.length) {
-    //                     itemsToSkip -= group.settings.length;
-    //                 } else {
-    //                     groupCopy.settings = group.settings.slice(itemsToSkip, itemsToSkip + (query.pageSize - count));
-    //                     count += groupCopy.settings.length;
-    //                     itemsToSkip = 0;
-    //                     if (groupCopy.settings.length > 0) {
-    //                         acc.push(groupCopy);
-    //                     }
-    //                 }
-    //             }
-
-    //             return acc;
-    //         }, []);
-    //     }
-
-    //     return {
-    //         result: {
-    //             items: settingResult,
-    //             total
-    //         },
-    //         message: "User settings retrieved successfully"
-    //     };
-    // }
-
-    async findAllUserSettings(userId: string, query: QueryUserSettingDto): Promise<ResponseType<any>> {
-        // Get all available system settings with filters
-        const availableSettings = await this.settingsService.findAllAvailable(query);
-
-        // Build filter for user settings
-        const userFilter: FilterQuery<UserSetting> = { user: userId };
-        if (typeof query.isActive === 'boolean') {
-            userFilter.isActive = query.isActive;
-        }
-    
-        // Get all user settings
-        const userSettings = await this.userSettingModel
-            .find(userFilter)
-            .populate({
-                path: 'setting',
-                populate: {
-                    path: 'category'
-                }
-            })
-            .lean()
-            .exec();
-    
-        // Create a map of user settings for quick lookup
-        const userSettingsMap = new Map(
-            userSettings.map(userSetting => {
-                const settingId = (userSetting.setting as any)?._id?.toString();
-                return [settingId, userSetting];
-            })
-        );
-    
-        // Merge system settings with user settings
-        const mergedSettings = availableSettings.map(systemSetting => {
-            const systemSettingId = (systemSetting as any)?._id?.toString();
-            const userSetting = userSettingsMap.get(systemSettingId);
-    
-            // Flatten the system setting structure
-            const flattenedSetting = {
-                ...systemSetting.toObject(),
-                _id: systemSetting._id,
-                key: systemSetting.key,
-                value: userSetting ? userSetting.value : systemSetting.value?.default,
-                label: systemSetting.label,
-                category: (systemSetting.category as any)?._id?.toString(),
-                dataType: systemSetting.dataType,
-                isSystem: systemSetting.isSystem,
-                isActive: userSetting ? userSetting.isActive : true,
-                isCustomized: !!userSetting,
-                options: systemSetting.options
-            };
-    
-            return flattenedSetting;
-        });
-    
-        // Group settings by category
-        const groupedSettings = mergedSettings.reduce((acc, setting) => {
-            const categoryId = setting.category;
-            if (!acc[categoryId]) {
-                acc[categoryId] = {
-                    category: categoryId,
-                    settings: []
-                };
-            }
-            acc[categoryId].settings.push(setting);
-            return acc;
-        }, {} as Record<string, any>);
-    
-        // Convert to array and sort by category order
-        let settingResult = Object.values(groupedSettings);
-    
-        // Calculate total items
-        const total = mergedSettings.length;
-    
-        return {
-            result: {
-                items: settingResult,
-                total
-            },
-            message: "User settings retrieved successfully"
-        };
-    }
 }

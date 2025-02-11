@@ -139,8 +139,8 @@ export class SettingsService {
         };
 
         if (query) {
-            if (query.setting) {
-                filter._id = query.setting;
+            if (query.settingKey) {
+                filter.key = query.settingKey;
             }
 
             if (query.category) {
