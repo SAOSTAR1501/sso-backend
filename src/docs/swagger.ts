@@ -3,7 +3,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 export function setupSwagger(app: INestApplication) {
   const config = new DocumentBuilder()
-    .setTitle('Auth SSO API')
+    .setTitle(`${process.env.SWAGGER_TITLE}`)
     .setDescription('Centralized API documentation')
     .setVersion('1.0')
     .addBearerAuth()
@@ -11,5 +11,5 @@ export function setupSwagger(app: INestApplication) {
 
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
-  console.log('Swagger API documentation is available at https://dev-api.1ai.one/api/docs');
+  console.log(`Swagger API documentation is available at ${process.env.SWAGGER_URL}`);
 }

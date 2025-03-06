@@ -5,7 +5,7 @@ import { User, UserDocument } from './user.schema';
 import { UpdateAvatarDto } from './dtos/update-avatar.dto';
 import { UpdateUserInfoDto } from './dtos/update-user-info.dto';
 import { ResponseType } from 'src/interfaces/response.interface';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { UpdatePasswordDto } from './dtos/update-password.dto';
 
 @Injectable()
