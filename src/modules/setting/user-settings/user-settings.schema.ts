@@ -58,8 +58,7 @@ export class UserSetting {
   @Prop({
     type: MongooseSchema.Types.ObjectId,
     ref: User.name,
-    required: true,
-    unique: true
+    required: true
   })
   user: string;
 

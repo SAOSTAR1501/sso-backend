@@ -64,6 +64,7 @@ export class AuthController {
     @Body() loginDto: LoginDto,
     @Res() res: Response,
   ) {
+    console.log({loginDto})
     const result = await this.authService.login(loginDto);
 
     if (result.tokens) {
