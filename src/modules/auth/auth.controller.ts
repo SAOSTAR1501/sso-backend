@@ -140,7 +140,7 @@ export class AuthController {
   @UseGuards(LocalGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user information' })
-  async getCurrentUser( @User() user: IUser) {
+  async getCurrentUser(@User() user: IUser) {
     const userId = user.id;
     return await this.authService.getCurrentUser(userId);
   }
@@ -205,17 +205,17 @@ export class AuthController {
     res.cookie('accessToken', accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      domain: process.env.COOKIE_DOMAIN,
+      domain: process.env.DEV ? '' : process.env.COOKIE_DOMAIN,
       maxAge: 15 * 60 * 1000, // 15 minutes
-      sameSite: 'lax',
+      sameSite: 'none',
     });
 
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      domain: process.env.COOKIE_DOMAIN,
+      domain: process.env.DEV ? '' : process.env.COOKIE_DOMAIN,
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      sameSite: 'lax',
+      sameSite: 'none',
     });
   }
 
@@ -223,14 +223,14 @@ export class AuthController {
     res.clearCookie('accessToken', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      domain: process.env.COOKIE_DOMAIN,
-      sameSite: 'lax',
+      domain: process.env.DEV ? '' : process.env.COOKIE_DOMAIN,
+      sameSite: 'none',
     });
     res.clearCookie('refreshToken', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      domain: process.env.COOKIE_DOMAIN,
-      sameSite: 'lax',
+      domain: process.env.DEV ? '' : process.env.COOKIE_DOMAIN,
+      sameSite: 'none',
     });
   }
 }
