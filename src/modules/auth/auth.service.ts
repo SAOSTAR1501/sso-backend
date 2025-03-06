@@ -3,7 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { UserService } from '../user/user.service';
 import { OtpService } from '../otp/otp.service';
 import { EmailService } from '../email/email.service';
@@ -20,20 +20,72 @@ export class AuthService {
     private readonly userSettingsService: UserSettingsService
   ) { }
 
+  // async register(registerDto: RegisterDto) {
+  //   const redirectUrl = registerDto.redirectUri;
+  //   // Validate redirect URL if provided
+  //   if (redirectUrl && !this.validateRedirectUrl(redirectUrl)) {
+  //     throw new BadRequestException('Invalid redirect URL');
+  //   }
+
+  //   // Check if user exists
+  //   const existingUser = await this.userService.findByEmail(registerDto.email);
+  //   if (existingUser) {
+  //     throw new ConflictException('Email already exists');
+  //   }
+
+  //   // Hash password and create user
+  //   const hashedPassword = await bcrypt.hash(registerDto.password, 10);
+  //   const user = await this.userService.create({
+  //     email: registerDto.email,
+  //     fullName: registerDto.fullName,
+  //     password: hashedPassword,
+  //     role: 'customer',
+  //     avatar: {
+  //       url: `https://avatar.iran.liara.run/username?username=${registerDto.fullName}`,
+  //       publicId: '',
+  //     }
+  //   });
+
+  //   try {
+  //     await this.emailService.sendWelcomeEmail(user.email, user.fullName);
+  //   } catch (error) {
+  //     // Log error but don't fail registration if email fails
+  //     console.error('Failed to send welcome email:', error);
+  //   }
+
+  //   // Generate tokens
+  //   const tokens = await this.generateTokens(user);
+
+  //   // Build response
+  //   const response = {
+  //     user: {
+  //       id: user._id,
+  //       email: user.email,
+  //       fullName: user.fullName,
+  //       role: user.role,
+  //       avatar: user.avatar
+  //     },
+  //     tokens,
+  //     redirectTo: redirectUrl ? this.buildRedirectUrl(redirectUrl, tokens) : null,
+  //   };
+
+  //   return response;
+  // }
+
   async register(registerDto: RegisterDto) {
     const redirectUrl = registerDto.redirectUri;
-    // Validate redirect URL if provided
+    console.log({ redirectUrl })
     if (redirectUrl && !this.validateRedirectUrl(redirectUrl)) {
       throw new BadRequestException('Invalid redirect URL');
     }
 
-    // Check if user exists
+    console.log( "một")
+
     const existingUser = await this.userService.findByEmail(registerDto.email);
     if (existingUser) {
       throw new ConflictException('Email already exists');
     }
-
-    // Hash password and create user
+    console.log({existingUser})
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
     const user = await this.userService.create({
       email: registerDto.email,
@@ -46,30 +98,36 @@ export class AuthService {
       }
     });
 
+    console.log('User created:', user);  // <-- Xác nhận user tạo thành công chưa
+
     try {
       await this.emailService.sendWelcomeEmail(user.email, user.fullName);
     } catch (error) {
-      // Log error but don't fail registration if email fails
       console.error('Failed to send welcome email:', error);
     }
 
-    // Generate tokens
-    const tokens = await this.generateTokens(user);
+    try {
+      const tokens = await this.generateTokens(user);
+      console.log('Generated tokens:', tokens);  // <-- Xác nhận tokens tạo thành công chưa
 
-    // Build response
-    const response = {
-      user: {
-        id: user._id,
-        email: user.email,
-        fullName: user.fullName,
-        role: user.role,
-        avatar: user.avatar
-      },
-      tokens,
-      redirectTo: redirectUrl ? this.buildRedirectUrl(redirectUrl, tokens) : null,
-    };
+      const response = {
+        user: {
+          id: user._id,
+          email: user.email,
+          fullName: user.fullName,
+          role: user.role,
+          avatar: user.avatar
+        },
+        tokens,
+        redirectTo: redirectUrl ? this.buildRedirectUrl(redirectUrl, tokens) : null,
+      };
 
-    return response;
+      return response;
+
+    } catch (error) {
+      console.error('Error generating tokens:', error);  // <-- Quan trọng, thêm ngay dòng này vào
+      throw error;
+    }
   }
 
   async login(loginDto: LoginDto) {
@@ -280,20 +338,15 @@ export class AuthService {
       const allowedDomains = this.configService
         .get<string>('CORS_ORIGINS')
         .split(',')
-        .map(domain => {
-          try {
-            return new URL(domain).hostname;
-          } catch {
-            return domain;
-          }
-        });
-      return allowedDomains.some(domain =>
-        url.hostname === domain || url.hostname.endsWith(`.${domain}`)
-      );
+        .map(domain => new URL(domain).hostname);
+  
+      return allowedDomains.includes(url.hostname);
     } catch (error) {
+      console.error('Error validating redirect URL:', error);
       return false;
     }
   }
+
 
   async getCurrentUser(userId: string) {
     const user = await this.userService.findById(userId); // Phương thức findById trong UserService

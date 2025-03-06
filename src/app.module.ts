@@ -4,13 +4,11 @@ import { ConfigModule } from '@nestjs/config';
 import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { EmailModule } from './modules/email/email.module';
-import { EmailService } from './modules/email/email.service';
 import { OtpModule } from './modules/otp/otp.module';
-import { UserModule } from './modules/user/user.module';
-import { EmailTemplateService } from './modules/email/email-template.service';
 import { SettingCategoryModule } from './modules/setting/setting-category/setting-category.module';
 import { SettingsModule } from './modules/setting/settings/settings.module';
 import { UserSettingsModule } from './modules/setting/user-settings/user-settings.module';
+import { UserModule } from './modules/user/user.module';
 
 @Module({
   imports: [
@@ -28,7 +26,6 @@ import { UserSettingsModule } from './modules/setting/user-settings/user-setting
     SettingCategoryModule,
     SettingsModule,
     UserSettingsModule
-
   ],
   controllers: [],
   providers: [],

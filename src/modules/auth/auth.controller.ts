@@ -44,6 +44,7 @@ export class AuthController {
     @Body() registerDto: RegisterDto,
     @Res() res: Response,
   ) {
+    console.log({ registerDto })
     const result = await this.authService.register(registerDto);
 
     this.setTokenCookie(res, result.tokens.accessToken, result.tokens.refreshToken);
@@ -59,12 +60,11 @@ export class AuthController {
   @Public()
   @Post('login')
   @ApiOperation({ summary: 'User login' })
-  @HttpCode(HttpStatus.OK)
   async login(
     @Body() loginDto: LoginDto,
     @Res() res: Response,
   ) {
-    console.log({loginDto})
+    console.log({ loginDto })
     const result = await this.authService.login(loginDto);
 
     if (result.tokens) {
@@ -126,9 +126,7 @@ export class AuthController {
 
   @Public()
   @Post('logout')
-  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'User logout' })
-  @ApiResponse({ status: 200, description: 'User successfully logged out' })
   async logout(@Res({ passthrough: true }) res: Response) {
     this.clearTokenCookie(res);
     return {
@@ -180,7 +178,6 @@ export class AuthController {
 
   @Public()
   @Post('forgot-password')
-  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Initiate forgot password process' })
   async forgotPassword(
     @Body() body: ForgotPasswordDto
