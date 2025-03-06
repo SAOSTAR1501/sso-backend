@@ -9,6 +9,7 @@ import { SettingCategoryModule } from './modules/setting/setting-category/settin
 import { SettingsModule } from './modules/setting/settings/settings.module';
 import { UserSettingsModule } from './modules/setting/user-settings/user-settings.module';
 import { UserModule } from './modules/user/user.module';
+import { ClientAppModule } from './modules/client-app/client-app.module';
 
 @Module({
   imports: [
@@ -25,7 +26,8 @@ import { UserModule } from './modules/user/user.module';
     EmailModule,
     SettingCategoryModule,
     SettingsModule,
-    UserSettingsModule
+    UserSettingsModule,
+    ClientAppModule
   ],
   controllers: [],
   providers: [],

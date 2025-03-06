@@ -8,6 +8,7 @@ import { UserService } from '../user/user.service';
 import { OtpService } from '../otp/otp.service';
 import { EmailService } from '../email/email.service';
 import { UserSettingsService } from '../setting/user-settings/user-settings.service';
+import { ClientAppValidator } from '../client-app/client-app.validator';
 
 @Injectable()
 export class AuthService {
@@ -17,60 +18,9 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly otpService: OtpService,
     private readonly emailService: EmailService,
-    private readonly userSettingsService: UserSettingsService
+    private readonly userSettingsService: UserSettingsService,
+    private readonly clientAppValidator: ClientAppValidator
   ) { }
-
-  // async register(registerDto: RegisterDto) {
-  //   const redirectUrl = registerDto.redirectUri;
-  //   // Validate redirect URL if provided
-  //   if (redirectUrl && !this.validateRedirectUrl(redirectUrl)) {
-  //     throw new BadRequestException('Invalid redirect URL');
-  //   }
-
-  //   // Check if user exists
-  //   const existingUser = await this.userService.findByEmail(registerDto.email);
-  //   if (existingUser) {
-  //     throw new ConflictException('Email already exists');
-  //   }
-
-  //   // Hash password and create user
-  //   const hashedPassword = await bcrypt.hash(registerDto.password, 10);
-  //   const user = await this.userService.create({
-  //     email: registerDto.email,
-  //     fullName: registerDto.fullName,
-  //     password: hashedPassword,
-  //     role: 'customer',
-  //     avatar: {
-  //       url: `https://avatar.iran.liara.run/username?username=${registerDto.fullName}`,
-  //       publicId: '',
-  //     }
-  //   });
-
-  //   try {
-  //     await this.emailService.sendWelcomeEmail(user.email, user.fullName);
-  //   } catch (error) {
-  //     // Log error but don't fail registration if email fails
-  //     console.error('Failed to send welcome email:', error);
-  //   }
-
-  //   // Generate tokens
-  //   const tokens = await this.generateTokens(user);
-
-  //   // Build response
-  //   const response = {
-  //     user: {
-  //       id: user._id,
-  //       email: user.email,
-  //       fullName: user.fullName,
-  //       role: user.role,
-  //       avatar: user.avatar
-  //     },
-  //     tokens,
-  //     redirectTo: redirectUrl ? this.buildRedirectUrl(redirectUrl, tokens) : null,
-  //   };
-
-  //   return response;
-  // }
 
   async register(registerDto: RegisterDto) {
     const redirectUrl = registerDto.redirectUri;
@@ -79,13 +29,13 @@ export class AuthService {
       throw new BadRequestException('Invalid redirect URL');
     }
 
-    console.log( "một")
+    console.log("một")
 
     const existingUser = await this.userService.findByEmail(registerDto.email);
     if (existingUser) {
       throw new ConflictException('Email already exists');
     }
-    console.log({existingUser})
+    console.log({ existingUser })
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
     const user = await this.userService.create({
       email: registerDto.email,
@@ -339,7 +289,7 @@ export class AuthService {
         .get<string>('CORS_ORIGINS')
         .split(',')
         .map(domain => new URL(domain).hostname);
-  
+
       return allowedDomains.includes(url.hostname);
     } catch (error) {
       console.error('Error validating redirect URL:', error);
@@ -347,7 +297,117 @@ export class AuthService {
     }
   }
 
+  async generateTokensForClient(user: any, clientId: string) {
+    // Verify the client application is valid
+    if (clientId) {
+      const isValidClient = await this.clientAppValidator.verifyClientCredentials(clientId, '');
+      if (!isValidClient) {
+        throw new BadRequestException('Invalid client application');
+      }
+    }
 
+    // Create token payload with client ID
+    const payload = {
+      _id: user._id || user.id, // Handle both MongoDB _id and JWT payload id
+      username: user.username,
+      fullName: user.fullName,
+      email: user.email,
+      avatarUrl: user.avatarUrl || user.avatar?.url || '',
+      role: user.role,
+      isActive: user.isActive || false,
+      clientId // Include client ID in token
+    };
+
+    // Sign tokens
+    const [accessToken, refreshToken] = await Promise.all([
+      this.jwtService.signAsync(payload, {
+        secret: this.configService.get('JWT_SECRET'),
+        expiresIn: this.configService.get('JWT_ACCESS_EXPIRES'),
+      }),
+      this.jwtService.signAsync(payload, {
+        secret: this.configService.get('JWT_REFRESH_SECRET'),
+        expiresIn: this.configService.get('JWT_REFRESH_EXPIRES'),
+      }),
+    ]);
+
+    return {
+      accessToken,
+      refreshToken,
+    };
+  }
+
+  async getClientAppInfo(clientId: string) {
+    try {
+      const client = await this.clientAppValidator.getClientDetails(clientId);
+      if (!client) {
+        return null;
+      }
+
+      // Return public information about the client app
+      return {
+        clientId: client.clientId,
+        clientName: client.clientName,
+        frontendUrl: client.frontendUrl
+      };
+    } catch (error) {
+      console.error('Error fetching client app info:', error);
+      return null;
+    }
+  }
+
+  async validateTokenForClient(token: string, clientId: string): Promise<boolean> {
+    try {
+      const payload = await this.jwtService.verifyAsync(token, {
+        secret: this.configService.get('JWT_SECRET'),
+      });
+
+      // Check if token includes clientId and it matches the requested client
+      return payload.clientId === clientId;
+    } catch (error) {
+      return false;
+    }
+  }
+
+   async createAuthorizationCode(userId: string, clientId: string, redirectUri: string): Promise<string> {
+    // Generate a random code
+    const authCode = Math.random().toString(36).substring(2, 15) + 
+                    Math.random().toString(36).substring(2, 15);
+
+    // In a real implementation, you would store this code with expiration
+    // along with the userId, clientId, and redirectUri
+    // For now, this is just a placeholder
+
+    return authCode;
+  }
+
+   async exchangeCodeForTokens(
+    code: string, 
+    clientId: string, 
+    clientSecret: string, 
+    redirectUri: string
+  ) {
+    // Verify client credentials
+    const isValidClient = await this.clientAppValidator.verifyClientCredentials(
+      clientId, 
+      clientSecret
+    );
+
+    if (!isValidClient) {
+      throw new UnauthorizedException('Invalid client credentials');
+    }
+
+    // In a real implementation, you would:
+    // 1. Validate the code exists and hasn't expired
+    // 2. Verify the clientId and redirectUri match those stored with the code
+    // 3. Delete the code so it can't be used again
+    // 4. Get the userId associated with the code
+    // 5. Generate tokens for the user
+
+    // This is a placeholder implementation
+    throw new BadRequestException('Authorization code flow not fully implemented');
+  }
+
+  
   async getCurrentUser(userId: string) {
     const user = await this.userService.findById(userId); // Phương thức findById trong UserService
     if (!user) {

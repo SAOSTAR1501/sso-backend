@@ -5,4 +5,5 @@ export interface GoogleUser {
     accessToken: string;
     refreshToken: string;
     redirectUri?: string;
+    clientId?: string;
 }
