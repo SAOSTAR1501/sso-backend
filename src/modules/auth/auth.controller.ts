@@ -205,7 +205,7 @@ export class AuthController {
     res.cookie('accessToken', accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      domain: process.env.DEV ? '' : process.env.COOKIE_DOMAIN,
+      domain: process.env.DEV === '1' ? '' : process.env.COOKIE_DOMAIN,
       maxAge: 15 * 60 * 1000, // 15 minutes
       sameSite: 'none',
     });
@@ -213,7 +213,7 @@ export class AuthController {
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      domain: process.env.DEV ? '' : process.env.COOKIE_DOMAIN,
+      domain: process.env.DEV === '1' ? '' : process.env.COOKIE_DOMAIN,
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       sameSite: 'none',
     });
@@ -223,13 +223,13 @@ export class AuthController {
     res.clearCookie('accessToken', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      domain: process.env.DEV ? '' : process.env.COOKIE_DOMAIN,
+      domain: process.env.DEV === '1' ? '' : process.env.COOKIE_DOMAIN,
       sameSite: 'none',
     });
     res.clearCookie('refreshToken', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      domain: process.env.DEV ? '' : process.env.COOKIE_DOMAIN,
+      domain: process.env.DEV === '1' ? '' : process.env.COOKIE_DOMAIN,
       sameSite: 'none',
     });
   }
