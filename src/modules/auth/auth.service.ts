@@ -338,11 +338,9 @@ export class AuthService {
       const allowedDomains = this.configService
         .get<string>('CORS_ORIGINS')
         .split(',')
-        .map(domain => domain.replace(/^https?:\/\//, '').trim()); // Loại bỏ http://, https:// nếu có
-
-      return allowedDomains.some(domain => {
-        return url.hostname === domain || url.hostname.endsWith(`.${domain}`);
-      });
+        .map(domain => new URL(domain).hostname);
+  
+      return allowedDomains.includes(url.hostname);
     } catch (error) {
       console.error('Error validating redirect URL:', error);
       return false;
