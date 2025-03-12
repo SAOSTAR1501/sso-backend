@@ -5,6 +5,7 @@ import { ClientAppController } from './client-app.controller';
 import { ClientApp, ClientAppSchema } from './client-app.schema';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import { ClientAppValidator } from './client-app.validator';
 
 @Module({
     imports: [
@@ -23,7 +24,7 @@ import { JwtModule } from '@nestjs/jwt';
         }),
     ],
     controllers: [ClientAppController],
-    providers: [ClientAppService],
-    exports: [ClientAppService],
+    providers: [ClientAppService, ClientAppValidator],
+    exports: [ClientAppService, ClientAppValidator],
 })
 export class ClientAppModule { }

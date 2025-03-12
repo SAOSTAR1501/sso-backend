@@ -12,24 +12,23 @@ import {
   UnauthorizedException,
   UseGuards
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { AuthGuard } from '@nestjs/passport';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
+import { User } from 'src/decorators/user.decorator';
+import { IUser } from 'src/interfaces/user.interface';
+import 'src/types/session';
 import { Public } from '../../decorators/public.decorator';
+import { ClientAppValidator } from '../client-app/client-app.validator';
 import { AuthService } from './auth.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { LocalGuard } from './guard/local.guard';
-import { ConfigService } from '@nestjs/config';
-import 'src/types/session';
-import { GoogleUser } from './interfaces/oauth.interface';
 import { GoogleGuard } from './guard/google.guard';
-import { User } from 'src/decorators/user.decorator';
-import { IUser } from 'src/interfaces/user.interface';
-import { ClientAppValidator } from '../client-app/client-app.validator';
+import { LocalGuard } from './guard/local.guard';
+import { GoogleUser } from './interfaces/oauth.interface';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -195,7 +194,7 @@ export class AuthController {
           throw new BadRequestException('Invalid client credentials');
         }
       }
-      const result = await this.authService.refreshToken(refreshToken, clientId);
+      const result = await this.authService.refreshToken(refreshToken);
       // Set new access token in cookie
       this.setTokenCookie(res, result.accessToken, result.refreshToken);
 
@@ -233,134 +232,13 @@ export class AuthController {
     );
   }
 
-  @Public()
-  @Get('authorize')
-  @ApiOperation({ summary: 'Initiate SSO authorization flow' })
-  @ApiQuery({ name: 'client_id', required: true })
-  @ApiQuery({ name: 'redirect_uri', required: true })
-  @ApiQuery({ name: 'response_type', required: true, enum: ['code', 'token'] })
-  @ApiQuery({ name: 'state', required: false })
-  async authorize(
-    @Query('client_id') clientId: string,
-    @Query('redirect_uri') redirectUri: string,
-    @Query('response_type') responseType: string,
-    @Query('state') state: string,
-    @Req() req: Request,
-    @Res() res: Response
-  ) {
-    try {
-      // Validate client application
-      const isValidClient = await this.clientAppValidator.verifyClientId(clientId);
-      if (!isValidClient) {
-        throw new UnauthorizedException('Invalid client application');
-      }
-
-      // Validate redirect URL is registered for this client
-      const isValidRedirect = await this.clientAppValidator.validateRedirectUrl(clientId, redirectUri);
-      if (!isValidRedirect) {
-        throw new UnauthorizedException('Invalid redirect URL for client application');
-      }
-
-      // Check if user is already authenticated
-      const accessToken = req.cookies['accessToken'];
-      if (accessToken) {
-        try {
-          // Verify the token to get user info
-          const payload = await this.jwtService.verifyAsync(accessToken, {
-            secret: this.configService.get('JWT_SECRET'),
-          });
-
-          // User is already authenticated - create a response based on response_type
-          if (responseType === 'token') {
-            // Generate new tokens with client ID embedded
-            const tokens = await this.authService.refreshToken(req.cookies['refreshToken'], clientId);
-            
-            // Redirect with token in URL fragment
-            const url = new URL(redirectUri);
-            url.hash = `accessToken=${tokens.accessToken}&refreshToken=${tokens.refreshToken}` +
-                      (state ? `&state=${encodeURIComponent(state)}` : '');
-            
-            return res.redirect(url.toString());
-          } else if (responseType === 'code') {
-            // Not implemented yet - would generate a temporary code
-            throw new BadRequestException('Authorization code flow not supported yet');
-          } else {
-            throw new BadRequestException('Invalid response_type');
-          }
-        } catch (error) {
-          this.clearTokenCookie(res);
-        }
-      }
-
-      // Store SSO request parameters in session
-      req.session.authState = {
-        clientId,
-        redirectUri,
-        responseType,
-        state,
-        timestamp: new Date().toISOString()
-      };
-
-      // Redirect to login page (with client app branding if available)
-      const loginUrl = this.configService.get('SSO_LOGIN_URL') || '/login';
-      return res.redirect(`${loginUrl}?client_id=${clientId}`);
-    } catch (error) {
-      // Redirect to error page
-      const errorRedirectUrl = this.configService.get('ERROR_REDIRECT_URL');
-      return res.redirect(`${errorRedirectUrl}?error=${encodeURIComponent(error.message)}`);
-    }
-  }
-
-  @Public()
-  @Get('sso/callback')
-  @UseGuards(LocalGuard)
-  @ApiOperation({ summary: 'Complete SSO flow after authentication' })
-  async ssoCallback(@Req() req: Request, @Res() res: Response) {
-    try {
-      // Get SSO request from session
-      const authState = req.session?.authState;
-      if (!authState) {
-        throw new BadRequestException('No active SSO flow');
-      }
-
-      const { clientId, redirectUri, responseType, state } = authState;
-      
-      // Clear session state
-      delete req.session.authState;
-
-      // Get user info from JWT
-      const user = req.user;
-      if (!user) {
-        throw new UnauthorizedException('User not authenticated');
-      }
-
-      // Generate tokens with client ID
-      const tokens = await this.authService.generateTokensForClient(user, clientId);
-
-      // Redirect based on response_type
-      if (responseType === 'token') {
-        const url = new URL(redirectUri);
-        url.hash = `accessToken=${tokens.accessToken}&refreshToken=${tokens.refreshToken}` +
-                  (state ? `&state=${encodeURIComponent(state)}` : '');
-        
-        return res.redirect(url.toString());
-      } else {
-        throw new BadRequestException('Unsupported response_type');
-      }
-    } catch (error) {
-      // Redirect to error page
-      const errorRedirectUrl = this.configService.get('ERROR_REDIRECT_URL');
-      return res.redirect(`${errorRedirectUrl}?error=${encodeURIComponent(error.message)}`);
-    }
-  }
-
   private setTokenCookie(res: Response, accessToken: string, refreshToken: string) {
     res.cookie('accessToken', accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       domain: process.env.DEV === '1' ? '' : process.env.COOKIE_DOMAIN,
       maxAge: 15 * 60 * 1000, // 15 minutes
-      sameSite: 'none',
+      sameSite: 'lax',
     });
 
     res.cookie('refreshToken', refreshToken, {
@@ -368,7 +246,7 @@ export class AuthController {
       secure: process.env.NODE_ENV === 'production',
       domain: process.env.DEV === '1' ? '' : process.env.COOKIE_DOMAIN,
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      sameSite: 'none',
+      sameSite: 'lax',
     });
   }
 
@@ -377,13 +255,13 @@ export class AuthController {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       domain: process.env.DEV === '1' ? '' : process.env.COOKIE_DOMAIN,
-      sameSite: 'none',
+      sameSite: 'lax',
     });
     res.clearCookie('refreshToken', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       domain: process.env.DEV === '1' ? '' : process.env.COOKIE_DOMAIN,
-      sameSite: 'none',
+      sameSite: 'lax',
     });
   }
 }

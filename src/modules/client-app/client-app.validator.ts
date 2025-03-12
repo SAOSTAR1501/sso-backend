@@ -1,60 +1,92 @@
+// src/modules/client-app/client-app.validator.ts
 import { Injectable } from '@nestjs/common';
-import { ClientAppService } from './client-app.service';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { ClientApp } from './client-app.schema';
 
 @Injectable()
 export class ClientAppValidator {
-    constructor(private readonly clientAppService: ClientAppService) { }
+  constructor(
+    @InjectModel(ClientApp.name) private clientAppModel: Model<ClientApp>
+  ) {}
 
-    async validateRedirectUrl(clientId: string, redirectUrl: string): Promise<boolean> {
-        return await this.clientAppService.validateRedirectUrl(clientId, redirectUrl);
+  /**
+   * Verify client credentials (client_id and client_secret)
+   * @param clientId The client ID
+   * @param clientSecret The client secret
+   */
+  async verifyClientCredentials(clientId: string, clientSecret: string): Promise<boolean> {
+    const clientApp = await this.clientAppModel.findOne({ 
+      clientId,
+      active: true
+    }).exec();
+    
+    if (!clientApp) {
+      return false;
     }
+    
+    return clientApp.clientSecret === clientSecret;
+  }
 
-    async isOriginAllowed(clientId: string, origin: string): Promise<boolean> {
-        return await this.clientAppService.isOriginAllowed(clientId, origin);
+  /**
+   * Validate if a redirect URL is allowed for a specific client
+   * @param clientId The client ID
+   * @param redirectUrl The redirect URL to validate
+   */
+  async validateRedirectUrl(clientId: string, redirectUrl: string): Promise<boolean> {
+    const clientApp = await this.clientAppModel.findOne({ 
+      clientId,
+      active: true
+    }).exec();
+    
+    if (!clientApp) {
+      return false;
     }
-
-    async verifyClientCredentials(clientId: string, clientSecret: string): Promise<boolean> {
-        return await this.clientAppService.verifyClientCredentials(clientId, clientSecret);
-    }
-
-    async getAllowedRedirectUrls(clientId: string): Promise<string[]> {
-        const client = await this.clientAppService.findByClientId(clientId);
-        return client.redirectUrls;
-    }
-
-    async findClientIdFromOrigin(origin: string): Promise<string | null> {
-        if (!origin) {
-            return null;
+    
+    try {
+      const redirectUri = new URL(redirectUrl);
+      
+      // Check if the URL is in the allowed list
+      return clientApp.redirectUris.some(uri => {
+        try {
+          const allowedUri = new URL(uri);
+          
+          // Check if the hostname and protocol match
+          if (redirectUri.hostname !== allowedUri.hostname || 
+              redirectUri.protocol !== allowedUri.protocol) {
+            return false;
+          }
+          
+          // If the allowed URI has a path, the redirect URI must start with it
+          if (allowedUri.pathname !== '/' && !redirectUri.pathname.startsWith(allowedUri.pathname)) {
+            return false;
+          }
+          
+          return true;
+        } catch (error) {
+          return false;
         }
-
-        // Remove protocol
-        const hostname = new URL(origin).hostname;
-
-        // Find all active clients
-        const clients = await this.clientAppService.findAll(false);
-
-        // Find a client that matches this origin
-        for (const client of clients) {
-            // Check exact match on frontend URL
-            const frontendHostname = new URL(client.frontendUrl).hostname;
-            if (frontendHostname === hostname) {
-                return client.clientId;
-            }
-
-            // Check allowed origins
-            const isAllowed = client.allowedOrigins.some(allowedOrigin => {
-                if (allowedOrigin.startsWith('*.')) {
-                    const domain = allowedOrigin.substring(2);
-                    return hostname.endsWith(domain) && hostname.includes('.');
-                }
-                return new URL(allowedOrigin).hostname === hostname;
-            });
-
-            if (isAllowed) {
-                return client.clientId;
-            }
-        }
-
-        return null;
+      });
+    } catch (error) {
+      return false;
     }
+  }
+
+  /**
+   * Get a client app by client ID
+   * @param clientId The client ID
+   */
+  async getClientApp(clientId: string): Promise<ClientApp | null> {
+    return this.clientAppModel.findOne({ 
+      clientId,
+      active: true
+    }).exec();
+  }
+
+  /**
+   * Get all active client apps
+   */
+  async getAllActiveClients(): Promise<ClientApp[]> {
+    return this.clientAppModel.find({ active: true }).exec();
+  }
 }

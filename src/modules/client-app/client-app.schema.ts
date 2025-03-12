@@ -1,7 +1,6 @@
+// src/modules/client-app/schemas/client-app.schema.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
-
-export type ClientAppDocument = ClientApp & Document;
 
 @Schema({ timestamps: true })
 export class ClientApp extends Document {
@@ -9,31 +8,34 @@ export class ClientApp extends Document {
   clientId: string;
 
   @Prop({ required: true })
-  clientName: string;
-
-  @Prop({ required: true })
   clientSecret: string;
 
   @Prop({ required: true })
-  frontendUrl: string;
+  name: string;
 
   @Prop({ required: true })
-  backendUrl: string;
+  description: string;
 
-  @Prop({ type: [String], default: [] })
-  redirectUrls: string[];
+  @Prop({ required: true, type: [String] })
+  redirectUris: string[];
 
-  @Prop({ type: [String], default: [] })
-  allowedOrigins: string[];
+  @Prop({ required: true, type: [String], default: ['profile', 'email'] })
+  allowedScopes: string[];
 
-  @Prop({ default: true })
-  isActive: boolean;
+  @Prop({ required: true, default: false })
+  trusted: boolean;
 
-  @Prop({ default: false })
-  isInternal: boolean;
+  @Prop({ required: true, default: true })
+  active: boolean;
 
   @Prop({ type: Object, default: {} })
-  metadata: Record<string, any>;
+  settings: Record<string, any>;
+  
+  @Prop({ default: 3600 }) // 1 hour in seconds
+  accessTokenLifetime: number;
+
+  @Prop({ default: 2592000 }) // 30 days in seconds
+  refreshTokenLifetime: number;
 }
 
 export const ClientAppSchema = SchemaFactory.createForClass(ClientApp);

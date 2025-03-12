@@ -9,6 +9,7 @@ import { OtpService } from '../otp/otp.service';
 import { EmailService } from '../email/email.service';
 import { UserSettingsService } from '../setting/user-settings/user-settings.service';
 import { ClientAppValidator } from '../client-app/client-app.validator';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -297,116 +298,6 @@ export class AuthService {
     }
   }
 
-  async generateTokensForClient(user: any, clientId: string) {
-    // Verify the client application is valid
-    if (clientId) {
-      const isValidClient = await this.clientAppValidator.verifyClientCredentials(clientId, '');
-      if (!isValidClient) {
-        throw new BadRequestException('Invalid client application');
-      }
-    }
-
-    // Create token payload with client ID
-    const payload = {
-      _id: user._id || user.id, // Handle both MongoDB _id and JWT payload id
-      username: user.username,
-      fullName: user.fullName,
-      email: user.email,
-      avatarUrl: user.avatarUrl || user.avatar?.url || '',
-      role: user.role,
-      isActive: user.isActive || false,
-      clientId // Include client ID in token
-    };
-
-    // Sign tokens
-    const [accessToken, refreshToken] = await Promise.all([
-      this.jwtService.signAsync(payload, {
-        secret: this.configService.get('JWT_SECRET'),
-        expiresIn: this.configService.get('JWT_ACCESS_EXPIRES'),
-      }),
-      this.jwtService.signAsync(payload, {
-        secret: this.configService.get('JWT_REFRESH_SECRET'),
-        expiresIn: this.configService.get('JWT_REFRESH_EXPIRES'),
-      }),
-    ]);
-
-    return {
-      accessToken,
-      refreshToken,
-    };
-  }
-
-  async getClientAppInfo(clientId: string) {
-    try {
-      const client = await this.clientAppValidator.getClientDetails(clientId);
-      if (!client) {
-        return null;
-      }
-
-      // Return public information about the client app
-      return {
-        clientId: client.clientId,
-        clientName: client.clientName,
-        frontendUrl: client.frontendUrl
-      };
-    } catch (error) {
-      console.error('Error fetching client app info:', error);
-      return null;
-    }
-  }
-
-  async validateTokenForClient(token: string, clientId: string): Promise<boolean> {
-    try {
-      const payload = await this.jwtService.verifyAsync(token, {
-        secret: this.configService.get('JWT_SECRET'),
-      });
-
-      // Check if token includes clientId and it matches the requested client
-      return payload.clientId === clientId;
-    } catch (error) {
-      return false;
-    }
-  }
-
-   async createAuthorizationCode(userId: string, clientId: string, redirectUri: string): Promise<string> {
-    // Generate a random code
-    const authCode = Math.random().toString(36).substring(2, 15) + 
-                    Math.random().toString(36).substring(2, 15);
-
-    // In a real implementation, you would store this code with expiration
-    // along with the userId, clientId, and redirectUri
-    // For now, this is just a placeholder
-
-    return authCode;
-  }
-
-   async exchangeCodeForTokens(
-    code: string, 
-    clientId: string, 
-    clientSecret: string, 
-    redirectUri: string
-  ) {
-    // Verify client credentials
-    const isValidClient = await this.clientAppValidator.verifyClientCredentials(
-      clientId, 
-      clientSecret
-    );
-
-    if (!isValidClient) {
-      throw new UnauthorizedException('Invalid client credentials');
-    }
-
-    // In a real implementation, you would:
-    // 1. Validate the code exists and hasn't expired
-    // 2. Verify the clientId and redirectUri match those stored with the code
-    // 3. Delete the code so it can't be used again
-    // 4. Get the userId associated with the code
-    // 5. Generate tokens for the user
-
-    // This is a placeholder implementation
-    throw new BadRequestException('Authorization code flow not fully implemented');
-  }
-
   
   async getCurrentUser(userId: string) {
     const user = await this.userService.findById(userId); // Phương thức findById trong UserService
@@ -423,5 +314,127 @@ export class AuthService {
       },
       message: 'Get user info successfully'
     };
+  }
+
+  async generateOAuthTokens(user: any, clientId: string, scopes: string[] = ['profile', 'email']) {
+    // Lấy thông tin client app
+    const clientApp = await this.clientAppValidator.getClientApp(clientId);
+    if (!clientApp) {
+      throw new BadRequestException('Invalid client ID');
+    }
+  
+    const payload = {
+      _id: user._id || user.result._id, // Hỗ trợ cả hai format
+      email: user.email || user.result.email,
+      fullName: user.fullName || user.result.fullName,
+      avatarUrl: user.avatar?.url || user.result.avatar?.url || '',
+      role: user.role || user.result.role,
+      scope: scopes.join(' '),
+      client_id: clientId,
+      iss: this.configService.get('APP_URL'), // Issuer
+      sub: user._id || user.result._id, // Subject
+      aud: clientId, // Audience
+      jti: randomUUID() // JWT ID - unique
+    };
+  
+    // Sử dụng thời hạn token dựa theo cấu hình của client
+    const accessTokenExpiry = clientApp.accessTokenLifetime || 
+      parseInt(this.configService.get('JWT_ACCESS_EXPIRES_SECONDS', '3600'));
+      
+    const refreshTokenExpiry = clientApp.refreshTokenLifetime || 
+      parseInt(this.configService.get('JWT_REFRESH_EXPIRES_SECONDS', '2592000'));
+  
+    const [accessToken, refreshToken] = await Promise.all([
+      this.jwtService.signAsync(payload, {
+        secret: this.configService.get('JWT_SECRET'),
+        expiresIn: accessTokenExpiry,
+      }),
+      this.jwtService.signAsync(payload, {
+        secret: this.configService.get('JWT_REFRESH_SECRET'),
+        expiresIn: refreshTokenExpiry,
+      }),
+    ]);
+  
+    return {
+      accessToken,
+      refreshToken,
+    };
+  }
+
+  async refreshOAuthToken(refreshToken: string, clientId: string) {
+    try {
+      // Verify refresh token
+      const payload = await this.jwtService.verifyAsync(refreshToken, {
+        secret: this.configService.get('JWT_REFRESH_SECRET'),
+      });
+  
+      // Kiểm tra nếu token được tạo cho client này
+      if (payload.client_id && payload.client_id !== clientId) {
+        throw new UnauthorizedException('Invalid refresh token for this client');
+      }
+  
+      // Loại bỏ các trường JWT
+      const { exp, iat, jti, ...tokenData } = payload;
+  
+      // Tạo unique JWT ID mới
+      const newJti = randomUUID();
+  
+      // Lấy thông tin client app
+      const clientApp = await this.clientAppValidator.getClientApp(clientId);
+      
+      const accessTokenExpiry = clientApp?.accessTokenLifetime || 
+        parseInt(this.configService.get('JWT_ACCESS_EXPIRES_SECONDS', '3600'));
+        
+      const refreshTokenExpiry = clientApp?.refreshTokenLifetime || 
+        parseInt(this.configService.get('JWT_REFRESH_EXPIRES_SECONDS', '2592000'));
+  
+      const [newAccessToken, newRefreshToken] = await Promise.all([
+        this.jwtService.signAsync({ ...tokenData, jti: newJti }, {
+          secret: this.configService.get('JWT_SECRET'),
+          expiresIn: accessTokenExpiry,
+        }),
+        this.jwtService.signAsync({ ...tokenData, jti: newJti }, {
+          secret: this.configService.get('JWT_REFRESH_SECRET'),
+          expiresIn: refreshTokenExpiry,
+        }),
+      ]);
+  
+      return {
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+      };
+    } catch (error) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+  }
+  
+  /**
+   * Lấy thông tin người dùng từ ID
+   * @param userId ID người dùng
+   */
+  async getUserById(userId: string) {
+    return this.userService.findById(userId);
+  }
+  
+  /**
+   * Kiểm tra xem người dùng đã đăng nhập trên tất cả ứng dụng chưa
+   * Dùng cho silent authentication
+   * @param userId ID người dùng
+   */
+  async checkSessionStatus(userId: string): Promise<{ [clientId: string]: boolean }> {
+    // Lấy danh sách tất cả client apps đang hoạt động
+    const clientApps = await this.clientAppValidator.getAllActiveClients();
+    
+    // Trong hệ thống thực tế, bạn sẽ cần kiểm tra session người dùng trên mỗi ứng dụng
+    // Ví dụ: kiểm tra trong Redis hoặc database session
+    
+    const status = {};
+    for (const app of clientApps) {
+      // Mặc định giả sử người dùng đã đăng nhập ở tất cả các ứng dụng
+      // Trong thực tế bạn cần có cơ chế track session
+      status[app.clientId] = true;
+    }
+    
+    return status;
   }
 }

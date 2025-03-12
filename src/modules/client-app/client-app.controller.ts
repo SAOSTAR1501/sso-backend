@@ -12,7 +12,7 @@ import {
     UseGuards
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger'
-import { CreateClientAppDto, RegenerateClientSecretDto, UpdateClientAppDto } from './client-app.dto';
+import { CreateClientAppDto, UpdateClientAppDto } from './client-app.dto';
 import { ClientAppService } from './client-app.service';
 import { AdminGuard } from '../auth/guard/admin.guard';
 
@@ -25,45 +25,61 @@ export class ClientAppController {
 
     @Post()
     @ApiOperation({ summary: 'Create a new client application' })
-    create(@Body() createClientAppDto: CreateClientAppDto) {
-        return this.clientAppService.create(createClientAppDto);
+    async create(@Body() createClientAppDto: CreateClientAppDto) {
+        return await this.clientAppService.create(createClientAppDto);
     }
 
     @Get()
-    @ApiOperation({ summary: 'Get all client applications' })
+    @ApiOperation({ summary: 'Get all client applications with pagination' })
+    @ApiQuery({ name: 'page', required: false, type: Number })
+    @ApiQuery({ name: 'pageSize', required: false, type: Number })
+    @ApiQuery({ name: 'search', required: false, type: String })
+    @ApiQuery({ name: 'sort', required: false, type: String })
     @ApiQuery({ name: 'includeInactive', required: false, type: Boolean })
-    findAll(@Query('includeInactive') includeInactive?: boolean) {
-        return this.clientAppService.findAll(includeInactive === true);
+    async findAll(
+        @Query('page') page?: number,
+        @Query('pageSize') pageSize?: number,
+        @Query('search') search?: string,
+        @Query('sort') sort?: string,
+        @Query('includeInactive') includeInactive?: boolean
+    ) {
+        return await this.clientAppService.findAll({
+            page: page ? Number(page) : 1,
+            pageSize: pageSize ? Number(pageSize) : 10,
+            search,
+            sort,
+            includeInactive: includeInactive === true
+        });
     }
 
     @Get(':id')
     @ApiOperation({ summary: 'Get a client application by ID' })
-    findOne(@Param('id') id: string) {
-        return this.clientAppService.findById(id);
+    async findOne(@Param('id') id: string) {
+        return await this.clientAppService.findById(id);
     }
 
     @Get('client/:clientId')
     @ApiOperation({ summary: 'Get a client application by client ID' })
-    findByClientId(@Param('clientId') clientId: string) {
-        return this.clientAppService.findByClientId(clientId);
+    async findByClientId(@Param('clientId') clientId: string) {
+        return await this.clientAppService.findByClientId(clientId);
     }
 
     @Patch(':id')
     @ApiOperation({ summary: 'Update a client application' })
-    update(@Param('id') id: string, @Body() updateClientAppDto: UpdateClientAppDto) {
-        return this.clientAppService.update(id, updateClientAppDto);
+    async update(@Param('id') id: string, @Body() updateClientAppDto: UpdateClientAppDto) {
+        return await this.clientAppService.update(id, updateClientAppDto);
     }
 
     @Delete(':id')
     @ApiOperation({ summary: 'Delete a client application' })
     @HttpCode(HttpStatus.OK)
-    remove(@Param('id') id: string) {
-        return this.clientAppService.remove(id);
+    async remove(@Param('id') id: string) {
+        return await this.clientAppService.remove(id);
     }
 
     @Post('regenerate-secret')
     @ApiOperation({ summary: 'Regenerate client secret' })
-    regenerateSecret(@Body() regenerateClientSecretDto: RegenerateClientSecretDto) {
-        return this.clientAppService.regenerateClientSecret(regenerateClientSecretDto.clientId);
+    async regenerateSecret(@Body() regenerateClientSecretDto: any) {
+        return await this.clientAppService.regenerateClientSecret(regenerateClientSecretDto.clientId);
     }
 }
