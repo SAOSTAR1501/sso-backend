@@ -8,6 +8,8 @@ import { UserService } from '../user/user.service';
 import { OtpService } from '../otp/otp.service';
 import { EmailService } from '../email/email.service';
 import { UserSettingsService } from '../setting/user-settings/user-settings.service';
+import { ClientAppValidator } from '../client-app/client-app.validator';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -17,60 +19,9 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly otpService: OtpService,
     private readonly emailService: EmailService,
-    private readonly userSettingsService: UserSettingsService
+    private readonly userSettingsService: UserSettingsService,
+    private readonly clientAppValidator: ClientAppValidator
   ) { }
-
-  // async register(registerDto: RegisterDto) {
-  //   const redirectUrl = registerDto.redirectUri;
-  //   // Validate redirect URL if provided
-  //   if (redirectUrl && !this.validateRedirectUrl(redirectUrl)) {
-  //     throw new BadRequestException('Invalid redirect URL');
-  //   }
-
-  //   // Check if user exists
-  //   const existingUser = await this.userService.findByEmail(registerDto.email);
-  //   if (existingUser) {
-  //     throw new ConflictException('Email already exists');
-  //   }
-
-  //   // Hash password and create user
-  //   const hashedPassword = await bcrypt.hash(registerDto.password, 10);
-  //   const user = await this.userService.create({
-  //     email: registerDto.email,
-  //     fullName: registerDto.fullName,
-  //     password: hashedPassword,
-  //     role: 'customer',
-  //     avatar: {
-  //       url: `https://avatar.iran.liara.run/username?username=${registerDto.fullName}`,
-  //       publicId: '',
-  //     }
-  //   });
-
-  //   try {
-  //     await this.emailService.sendWelcomeEmail(user.email, user.fullName);
-  //   } catch (error) {
-  //     // Log error but don't fail registration if email fails
-  //     console.error('Failed to send welcome email:', error);
-  //   }
-
-  //   // Generate tokens
-  //   const tokens = await this.generateTokens(user);
-
-  //   // Build response
-  //   const response = {
-  //     user: {
-  //       id: user._id,
-  //       email: user.email,
-  //       fullName: user.fullName,
-  //       role: user.role,
-  //       avatar: user.avatar
-  //     },
-  //     tokens,
-  //     redirectTo: redirectUrl ? this.buildRedirectUrl(redirectUrl, tokens) : null,
-  //   };
-
-  //   return response;
-  // }
 
   async register(registerDto: RegisterDto) {
     const redirectUrl = registerDto.redirectUri;
@@ -79,13 +30,11 @@ export class AuthService {
       throw new BadRequestException('Invalid redirect URL');
     }
 
-    console.log( "một")
-
     const existingUser = await this.userService.findByEmail(registerDto.email);
     if (existingUser) {
       throw new ConflictException('Email already exists');
     }
-    console.log({existingUser})
+    console.log({ existingUser })
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
     const user = await this.userService.create({
       email: registerDto.email,
@@ -98,8 +47,6 @@ export class AuthService {
       }
     });
 
-    console.log('User created:', user);  // <-- Xác nhận user tạo thành công chưa
-
     try {
       await this.emailService.sendWelcomeEmail(user.email, user.fullName);
     } catch (error) {
@@ -108,7 +55,6 @@ export class AuthService {
 
     try {
       const tokens = await this.generateTokens(user);
-      console.log('Generated tokens:', tokens);  // <-- Xác nhận tokens tạo thành công chưa
 
       const response = {
         user: {
@@ -131,11 +77,7 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto) {
-    const redirectUrl = loginDto.redirectUri;
-    // Validate redirect URL if provided
-    if (redirectUrl && !this.validateRedirectUrl(redirectUrl)) {
-      throw new BadRequestException('Invalid redirect URL');
-    }
+    const redirect = loginDto.redirect;
 
     // Find user
     const user = await this.userService.findByEmail(loginDto.email);
@@ -162,8 +104,10 @@ export class AuthService {
         avatar: user.avatar,
       },
       tokens,
-      // redirectTo: redirectUrl ? this.buildRedirectUrl(redirectUrl, tokens) : null,
-      redirectTo: redirectUrl ? redirectUrl : null,
+      // redirectTo: redirect ? this.buildRedirectUrl(redirect, tokens) : null,
+      redirectTo: redirect ? redirect : null,
+      clientId: loginDto.clientId,
+      redirectUri: loginDto.redirectUri
     };
 
     return response;
@@ -339,7 +283,7 @@ export class AuthService {
         .get<string>('CORS_ORIGINS')
         .split(',')
         .map(domain => new URL(domain).hostname);
-  
+
       return allowedDomains.includes(url.hostname);
     } catch (error) {
       console.error('Error validating redirect URL:', error);
@@ -347,7 +291,7 @@ export class AuthService {
     }
   }
 
-
+  
   async getCurrentUser(userId: string) {
     const user = await this.userService.findById(userId); // Phương thức findById trong UserService
     if (!user) {
@@ -363,5 +307,127 @@ export class AuthService {
       },
       message: 'Get user info successfully'
     };
+  }
+
+  async generateOAuthTokens(user: any, clientId: string, scopes: string[] = ['profile', 'email']) {
+    // Lấy thông tin client app
+    const clientApp = await this.clientAppValidator.getClientApp(clientId);
+    if (!clientApp) {
+      throw new BadRequestException('Invalid client ID');
+    }
+  
+    const payload = {
+      _id: user._id || user.result._id, // Hỗ trợ cả hai format
+      email: user.email || user.result.email,
+      fullName: user.fullName || user.result.fullName,
+      avatarUrl: user.avatar?.url || user.result.avatar?.url || '',
+      role: user.role || user.result.role,
+      scope: scopes.join(' '),
+      client_id: clientId,
+      iss: this.configService.get('APP_URL'), // Issuer
+      sub: user._id || user.result._id, // Subject
+      aud: clientId, // Audience
+      jti: randomUUID() // JWT ID - unique
+    };
+  
+    // Sử dụng thời hạn token dựa theo cấu hình của client
+    const accessTokenExpiry = clientApp.accessTokenLifetime || 
+      parseInt(this.configService.get('JWT_ACCESS_EXPIRES_SECONDS', '3600'));
+      
+    const refreshTokenExpiry = clientApp.refreshTokenLifetime || 
+      parseInt(this.configService.get('JWT_REFRESH_EXPIRES_SECONDS', '2592000'));
+  
+    const [accessToken, refreshToken] = await Promise.all([
+      this.jwtService.signAsync(payload, {
+        secret: this.configService.get('JWT_SECRET'),
+        expiresIn: accessTokenExpiry,
+      }),
+      this.jwtService.signAsync(payload, {
+        secret: this.configService.get('JWT_REFRESH_SECRET'),
+        expiresIn: refreshTokenExpiry,
+      }),
+    ]);
+  
+    return {
+      accessToken,
+      refreshToken,
+    };
+  }
+
+  async refreshOAuthToken(refreshToken: string, clientId: string) {
+    try {
+      // Verify refresh token
+      const payload = await this.jwtService.verifyAsync(refreshToken, {
+        secret: this.configService.get('JWT_REFRESH_SECRET'),
+      });
+  
+      // Kiểm tra nếu token được tạo cho client này
+      if (payload.client_id && payload.client_id !== clientId) {
+        throw new UnauthorizedException('Invalid refresh token for this client');
+      }
+  
+      // Loại bỏ các trường JWT
+      const { exp, iat, jti, ...tokenData } = payload;
+  
+      // Tạo unique JWT ID mới
+      const newJti = randomUUID();
+  
+      // Lấy thông tin client app
+      const clientApp = await this.clientAppValidator.getClientApp(clientId);
+      
+      const accessTokenExpiry = clientApp?.accessTokenLifetime || 
+        parseInt(this.configService.get('JWT_ACCESS_EXPIRES_SECONDS', '3600'));
+        
+      const refreshTokenExpiry = clientApp?.refreshTokenLifetime || 
+        parseInt(this.configService.get('JWT_REFRESH_EXPIRES_SECONDS', '2592000'));
+  
+      const [newAccessToken, newRefreshToken] = await Promise.all([
+        this.jwtService.signAsync({ ...tokenData, jti: newJti }, {
+          secret: this.configService.get('JWT_SECRET'),
+          expiresIn: accessTokenExpiry,
+        }),
+        this.jwtService.signAsync({ ...tokenData, jti: newJti }, {
+          secret: this.configService.get('JWT_REFRESH_SECRET'),
+          expiresIn: refreshTokenExpiry,
+        }),
+      ]);
+  
+      return {
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
+      };
+    } catch (error) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+  }
+  
+  /**
+   * Lấy thông tin người dùng từ ID
+   * @param userId ID người dùng
+   */
+  async getUserById(userId: string) {
+    return this.userService.findById(userId);
+  }
+  
+  /**
+   * Kiểm tra xem người dùng đã đăng nhập trên tất cả ứng dụng chưa
+   * Dùng cho silent authentication
+   * @param userId ID người dùng
+   */
+  async checkSessionStatus(userId: string): Promise<{ [clientId: string]: boolean }> {
+    // Lấy danh sách tất cả client apps đang hoạt động
+    const clientApps = await this.clientAppValidator.getAllActiveClients();
+    
+    // Trong hệ thống thực tế, bạn sẽ cần kiểm tra session người dùng trên mỗi ứng dụng
+    // Ví dụ: kiểm tra trong Redis hoặc database session
+    
+    const status = {};
+    for (const app of clientApps) {
+      // Mặc định giả sử người dùng đã đăng nhập ở tất cả các ứng dụng
+      // Trong thực tế bạn cần có cơ chế track session
+      status[app.clientId] = true;
+    }
+    
+    return status;
   }
 }

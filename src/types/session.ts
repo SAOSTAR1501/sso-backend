@@ -5,6 +5,10 @@ declare module 'express-session' {
     authState: {
         redirectUri: string;
         timestamp: string;
+        clientId: string;
+        scope: string;
+        state: string;
+        userId?: string;
     }
   }
 }

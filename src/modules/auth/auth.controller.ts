@@ -9,25 +9,26 @@ import {
   Query,
   Req,
   Res,
+  UnauthorizedException,
   UseGuards
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { AuthGuard } from '@nestjs/passport';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
+import { User } from 'src/decorators/user.decorator';
+import { IUser } from 'src/interfaces/user.interface';
+import 'src/types/session';
 import { Public } from '../../decorators/public.decorator';
+import { ClientAppValidator } from '../client-app/client-app.validator';
 import { AuthService } from './auth.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { LocalGuard } from './guard/local.guard';
-import { ConfigService } from '@nestjs/config';
-import 'src/types/session';
-import { GoogleUser } from './interfaces/oauth.interface';
 import { GoogleGuard } from './guard/google.guard';
-import { User } from 'src/decorators/user.decorator';
-import { IUser } from 'src/interfaces/user.interface';
+import { LocalGuard } from './guard/local.guard';
+import { GoogleUser } from './interfaces/oauth.interface';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -35,7 +36,8 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly jwtService: JwtService,
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    private readonly clientAppValidator: ClientAppValidator
   ) { }
 
   @Public()
@@ -58,12 +60,28 @@ export class AuthController {
   }
 
   @Public()
+  @Get('login')
+  @ApiOperation({ summary: 'Trang đăng nhập SSO' })
+  @ApiQuery({ name: 'redirect', required: false })
+  async loginSSO(
+    @Query('redirect') redirect: string,
+    @Query('client_id') clientId: string,
+    @Query('redirect_uri') redirectUri: string,
+    @Res() res: Response
+  ) {
+    // Chuyển hướng người dùng đến trang đăng nhập frontend của SSO
+    // (thay đổi URL này thành URL của trang đăng nhập frontend thực tế)
+    return res.redirect(`${process.env.FRONTEND_SSO_URL}/signin?redirect=${encodeURIComponent(redirect || '')}&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri || '')}`);
+  }
+
+  @Public()
   @Post('login')
   @ApiOperation({ summary: 'User login' })
   async login(
     @Body() loginDto: LoginDto,
     @Res() res: Response,
   ) {
+
     console.log({ loginDto })
     const result = await this.authService.login(loginDto);
 
@@ -74,7 +92,9 @@ export class AuthController {
       success: true,
       data: {
         user: result.user,
-        redirectTo: result.redirectTo
+        redirectTo: result.redirectTo,
+        clientId: result.clientId,
+        redirectUri: result.redirectUri
       }
     });
   }
@@ -84,13 +104,10 @@ export class AuthController {
   @UseGuards(GoogleGuard)
   @ApiOperation({ summary: 'Google OAuth login' })
   @ApiQuery({ name: 'redirect_uri', required: false })
-  async googleAuth(@Query('redirect_uri') redirectUri: string) {
-    if (redirectUri) {
-      // Validate redirect URL before starting the OAuth flow
-      if (!this.authService.validateRedirectUrl(redirectUri)) {
-        throw new BadRequestException('Invalid redirect URL');
-      }
-    }
+  async googleAuth(
+    @Query('redirect_uri') redirectUri: string,
+    @Query('client_id') clientId: string) {
+
   }
 
   @Public()
@@ -102,21 +119,47 @@ export class AuthController {
       const googleUser = req.user as GoogleUser;
       const result = await this.authService.googleLogin(googleUser);
 
-      // Use the redirect URI from the OAuth flow or fall back to default
-      const redirectUri = googleUser.redirectUri ||
-        this.configService.get('DEFAULT_CLIENT_REDIRECT_URL');
+      // Determine where to redirect the user based on the OAuth flow
+      let redirectUrl: string;
 
-      if (!redirectUri) {
+      // Check if we have a client-specific redirect URL
+      if (googleUser.clientId && googleUser.redirectUri) {
+        // Validate the redirect URL for this client
+        const isValidRedirect = await this.clientAppValidator.validateRedirectUrl(
+          googleUser.clientId,
+          googleUser.redirectUri
+        );
+
+        if (isValidRedirect) {
+          redirectUrl = googleUser.redirectUri;
+        } else {
+          throw new UnauthorizedException('Invalid redirect URL for client');
+        }
+      }
+      // Fall back to the redirect URI from the flow without a client ID
+      else if (googleUser.redirectUri) {
+        // Legacy validation
+        if (!this.authService.validateRedirectUrl(googleUser.redirectUri)) {
+          throw new BadRequestException('Invalid redirect URL');
+        }
+        redirectUrl = googleUser.redirectUri;
+      }
+      // Use default redirect URL as last resort
+      else {
+        redirectUrl = this.configService.get('DEFAULT_CLIENT_REDIRECT_URL');
+      }
+
+      if (!redirectUrl) {
         throw new BadRequestException('No valid redirect URI available');
       }
 
       this.setTokenCookie(res, result.tokens.accessToken, result.tokens.refreshToken);
 
-      // Add error handling for the redirect
-      const redirectUrl = new URL(redirectUri);
-      redirectUrl.searchParams.append('success', 'true');
+      // Add tokens to the redirect URL
+      const finalRedirectUrl = new URL(redirectUrl);
+      finalRedirectUrl.hash = `accessToken=${result.tokens.accessToken}&refreshToken=${result.tokens.refreshToken}`;
 
-      return res.redirect(redirectUrl.toString());
+      return res.redirect(finalRedirectUrl.toString());
     } catch (error) {
       // Handle errors gracefully
       const fallbackUrl = this.configService.get('ERROR_REDIRECT_URL');
@@ -150,7 +193,8 @@ export class AuthController {
   @ApiOperation({ summary: 'Refresh token' })
   async refresh(
     @Req() req: Request,
-    @Res() res: Response
+    @Res() res: Response,
+    @Query('client_id') clientId: string
   ) {
     try {
       // Get expired JWT from cookie and decode it to get userId
@@ -160,6 +204,13 @@ export class AuthController {
           success: false,
           message: 'Invalid refresh token'
         })
+      }
+
+      if (clientId) {
+        const isValidClient = await this.clientAppValidator.verifyClientCredentials(clientId, '')
+        if (!isValidClient) {
+          throw new BadRequestException('Invalid client credentials');
+        }
       }
       const result = await this.authService.refreshToken(refreshToken);
       // Set new access token in cookie
@@ -205,7 +256,7 @@ export class AuthController {
       secure: process.env.NODE_ENV === 'production',
       domain: process.env.DEV === '1' ? '' : process.env.COOKIE_DOMAIN,
       maxAge: 15 * 60 * 1000, // 15 minutes
-      sameSite: 'none',
+      sameSite: 'lax',
     });
 
     res.cookie('refreshToken', refreshToken, {
@@ -213,7 +264,7 @@ export class AuthController {
       secure: process.env.NODE_ENV === 'production',
       domain: process.env.DEV === '1' ? '' : process.env.COOKIE_DOMAIN,
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      sameSite: 'none',
+      sameSite: 'lax',
     });
   }
 
@@ -222,13 +273,13 @@ export class AuthController {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       domain: process.env.DEV === '1' ? '' : process.env.COOKIE_DOMAIN,
-      sameSite: 'none',
+      sameSite: 'lax',
     });
     res.clearCookie('refreshToken', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       domain: process.env.DEV === '1' ? '' : process.env.COOKIE_DOMAIN,
-      sameSite: 'none',
+      sameSite: 'lax',
     });
   }
 }
