@@ -125,6 +125,7 @@ export class ClientAppService {
    * Find a client application by clientId
    */
   async findByClientId(clientId: string) {
+    console.log({ clientId, a: clientId })
     const client = await this.clientAppModel.findOne({ clientId }).exec();
     if (!client) {
       throw new NotFoundException(`Client application with client ID ${clientId} not found`);

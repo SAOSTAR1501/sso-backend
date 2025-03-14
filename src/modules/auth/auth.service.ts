@@ -30,8 +30,6 @@ export class AuthService {
       throw new BadRequestException('Invalid redirect URL');
     }
 
-    console.log("một")
-
     const existingUser = await this.userService.findByEmail(registerDto.email);
     if (existingUser) {
       throw new ConflictException('Email already exists');
@@ -49,8 +47,6 @@ export class AuthService {
       }
     });
 
-    console.log('User created:', user);  // <-- Xác nhận user tạo thành công chưa
-
     try {
       await this.emailService.sendWelcomeEmail(user.email, user.fullName);
     } catch (error) {
@@ -59,7 +55,6 @@ export class AuthService {
 
     try {
       const tokens = await this.generateTokens(user);
-      console.log('Generated tokens:', tokens);  // <-- Xác nhận tokens tạo thành công chưa
 
       const response = {
         user: {
@@ -82,11 +77,7 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto) {
-    const redirectUrl = loginDto.redirectUri;
-    // Validate redirect URL if provided
-    if (redirectUrl && !this.validateRedirectUrl(redirectUrl)) {
-      throw new BadRequestException('Invalid redirect URL');
-    }
+    const redirect = loginDto.redirect;
 
     // Find user
     const user = await this.userService.findByEmail(loginDto.email);
@@ -113,8 +104,10 @@ export class AuthService {
         avatar: user.avatar,
       },
       tokens,
-      // redirectTo: redirectUrl ? this.buildRedirectUrl(redirectUrl, tokens) : null,
-      redirectTo: redirectUrl ? redirectUrl : null,
+      // redirectTo: redirect ? this.buildRedirectUrl(redirect, tokens) : null,
+      redirectTo: redirect ? redirect : null,
+      clientId: loginDto.clientId,
+      redirectUri: loginDto.redirectUri
     };
 
     return response;

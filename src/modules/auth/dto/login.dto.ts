@@ -11,13 +11,18 @@ export class LoginDto {
     @MinLength(6)
     password: string;
 
-    @ApiProperty({ example: 'http://localhost:3000' })
-    @IsString()
-    @IsOptional()
-    redirectUri: string;
-
     @ApiProperty({ example: 'client123', required: false, description: 'Client ID' })
     @IsString()
     @IsOptional()
     clientId: string;
+
+    @ApiProperty({description: 'redirect', required: false})
+    @IsString()
+    @IsOptional()
+    redirect: string;
+
+    @ApiProperty({description: 'redirectUri', required: false})
+    @IsString()
+    @IsOptional()
+    redirectUri: string;
 }

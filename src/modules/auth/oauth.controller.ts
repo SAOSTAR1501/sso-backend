@@ -22,26 +22,20 @@ import { AuthService } from './auth.service';
 import { LocalGuard } from './guard/local.guard';
 import { randomBytes } from 'crypto';
 import { IUser } from 'src/interfaces/user.interface';
+import { AuthorizationCodeService } from './authorization-code/authorization-code.service';
+import { OauthTokenDto } from './dto/oauth-token.dto';
 
 @ApiTags('OAuth')
 @Controller('oauth')
 export class OAuthController {
-    // Lưu trữ tạm thời các authorization codes (trong production nên lưu vào Redis/DB)
-    private authorizationCodes = new Map<string, {
-        code: string,
-        clientId: string,
-        redirectUri: string,
-        userId: string,
-        scope: string,
-        expiresAt: Date
-    }>();
 
     constructor(
         private readonly authService: AuthService,
         private readonly jwtService: JwtService,
         private readonly configService: ConfigService,
         private readonly clientAppValidator: ClientAppValidator,
-        private readonly clientAppService: ClientAppService
+        private readonly clientAppService: ClientAppService,
+        private readonly authorizationCodeService: AuthorizationCodeService
     ) { }
 
     @Public()
@@ -62,6 +56,7 @@ export class OAuthController {
         @Query('state') state?: string,
     ) {
         try {
+            console.log({ responseType, clientId, redirectUri, scope, state })
             // Validate request parameters
             if (responseType !== 'code') {
                 throw new BadRequestException('Invalid response_type, only "code" is supported');
@@ -69,7 +64,7 @@ export class OAuthController {
 
             // Validate client credentials
             const clientApp = await this.clientAppService.findByClientId(clientId);
-            if (!clientApp) {
+            if (!clientApp.result) {
                 throw new BadRequestException('Invalid client_id');
             }
 
@@ -105,7 +100,7 @@ export class OAuthController {
                 };
 
                 // Redirect to login page
-                return res.redirect(`/auth/login?redirect=${encodeURIComponent('/oauth/authorize')}`);
+                return res.redirect(`/api/auth/login?redirect=${encodeURIComponent('/oauth/authorize')}&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}`);
             }
 
             // Get user from token
@@ -131,16 +126,11 @@ export class OAuthController {
             }
 
             // Generate authorization code for trusted apps (bypass consent)
-            const code = randomBytes(32).toString('hex');
-
-            // Store authorization code
-            this.authorizationCodes.set(code, {
-                code,
+            const code = await this.authorizationCodeService.createAuthorizationCode({
                 clientId: clientId,
                 redirectUri: redirectUri,
                 userId: payload._id,
-                scope: requestedScopes.join(' '),
-                expiresAt: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
+                scope: requestedScopes.join(' ')
             });
 
             // Prepare redirect URL
@@ -156,8 +146,9 @@ export class OAuthController {
             return res.redirect(redirectUrl.toString());
 
         } catch (error) {
+            console.log({ error })
             // Handle errors - redirect to error page for invalid requests
-            const errorRedirectUrl = this.configService.get('ERROR_REDIRECT_URL');
+            const errorRedirectUrl = this.configService.get('FRONTEND_SSO_URL');
             return res.redirect(`${errorRedirectUrl}?error=${encodeURIComponent(error.message)}`);
         }
     }
@@ -195,17 +186,14 @@ export class OAuthController {
         }
 
         // If user approved, generate authorization code
-        const code = randomBytes(32).toString('hex');
         const requestedScopes = scope ? scope.split(' ') : ['profile', 'email'];
 
         // Store authorization code
-        this.authorizationCodes.set(code, {
-            code,
+        const code = await this.authorizationCodeService.createAuthorizationCode({
             clientId,
             redirectUri,
             userId,
-            scope: requestedScopes.join(' '),
-            expiresAt: new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
+            scope: requestedScopes.join(' ')
         });
 
         // Prepare redirect URL
@@ -225,24 +213,19 @@ export class OAuthController {
     @Post('token')
     @ApiOperation({ summary: 'OAuth 2.0 token endpoint' })
     async token(
-        @Body('grant_type') grantType: string,
-        @Body('code') code: string,
-        @Body('redirect_uri') redirectUri: string,
-        @Body('client_id') clientId: string,
-        @Body('client_secret') clientSecret: string,
-        @Body('refresh_token') refreshToken: string,
+        @Body() body: OauthTokenDto,
         @Res() res: Response
     ) {
         try {
             // Validate grant type
-            if (grantType !== 'authorization_code' && grantType !== 'refresh_token') {
+            if (body.grantType !== 'authorization_code' && body.grantType !== 'refresh_token') {
                 throw new BadRequestException('Invalid grant_type');
             }
 
             // Validate client credentials
             const isValidClient = await this.clientAppValidator.verifyClientCredentials(
-                clientId,
-                clientSecret
+                body.clientId,
+                body.clientSecret
             );
 
             if (!isValidClient) {
@@ -250,80 +233,58 @@ export class OAuthController {
             }
 
             // Handle authorization_code grant type
-            if (grantType === 'authorization_code') {
-                if (!code) {
+            if (body.grantType === 'authorization_code') {
+                if (!body.code) {
                     throw new BadRequestException('Code is required');
                 }
 
                 // Validate code
-                const codeData = this.authorizationCodes.get(code);
-                if (!codeData) {
-                    throw new BadRequestException('Invalid code');
-                }
-
-                // Check if code is expired
-                if (codeData.expiresAt < new Date()) {
-                    this.authorizationCodes.delete(code);
-                    throw new BadRequestException('Code expired');
-                }
-
-                // Check if redirect_uri matches
-                if (codeData.redirectUri !== redirectUri) {
-                    throw new BadRequestException('Redirect URI mismatch');
-                }
-
-                // Check if client_id matches
-                if (codeData.clientId !== clientId) {
-                    throw new BadRequestException('Client ID mismatch');
-                }
+                const codeData = await this.authorizationCodeService.validateAndRemove(
+                    body.code,
+                    body.clientId,
+                    body.redirectUri
+                );
 
                 // Get user from code
                 const user = await this.authService.getCurrentUser(codeData.userId);
                 if (!user) {
                     throw new BadRequestException('User not found');
                 }
-
                 // Generate tokens
                 const tokens = await this.authService.generateOAuthTokens(
                     user,
-                    clientId,
+                    body.clientId,
                     codeData.scope.split(' ')
                 );
 
-                // Delete used code
-                this.authorizationCodes.delete(code);
-
                 // Return tokens
-                return {
-                    result: {
+                return res.status(200).json({
                         access_token: tokens.accessToken,
-                        token_type: 'Bearer',
-                        expires_in: this.configService.get('JWT_ACCESS_EXPIRES_SECONDS', 3600),
                         refresh_token: tokens.refreshToken,
-                        scope: codeData.scope
-                    }
-                };
+                })
             }
 
             // Handle refresh_token grant type
-            if (grantType === 'refresh_token') {
-                if (!refreshToken) {
+            if (body.grantType === 'refresh_token') {
+                if (!body.refreshToken) {
                     throw new BadRequestException('Refresh token is required');
                 }
 
+                console.log({ body })
+
                 const tokens = await this.authService.refreshOAuthToken(
-                    refreshToken,
-                    clientId
+                    body.refreshToken,
+                    body.clientId
                 );
 
-                return {
-                    rssult: {
+                return res.status(200).json({
+                    data: {
                         access_token: tokens.accessToken,
                         token_type: 'Bearer',
                         expires_in: this.configService.get('JWT_ACCESS_EXPIRES_SECONDS', 3600),
                         refresh_token: tokens.refreshToken
                     }
-                };
+                })
             }
 
         } catch (error) {

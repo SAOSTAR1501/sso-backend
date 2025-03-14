@@ -60,12 +60,28 @@ export class AuthController {
   }
 
   @Public()
+  @Get('login')
+  @ApiOperation({ summary: 'Trang đăng nhập SSO' })
+  @ApiQuery({ name: 'redirect', required: false })
+  async loginSSO(
+    @Query('redirect') redirect: string,
+    @Query('client_id') clientId: string,
+    @Query('redirect_uri') redirectUri: string,
+    @Res() res: Response
+  ) {
+    // Chuyển hướng người dùng đến trang đăng nhập frontend của SSO
+    // (thay đổi URL này thành URL của trang đăng nhập frontend thực tế)
+    return res.redirect(`${process.env.FRONTEND_SSO_URL}/signin?redirect=${encodeURIComponent(redirect || '')}&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri || '')}`);
+  }
+
+  @Public()
   @Post('login')
   @ApiOperation({ summary: 'User login' })
   async login(
     @Body() loginDto: LoginDto,
     @Res() res: Response,
   ) {
+
     console.log({ loginDto })
     const result = await this.authService.login(loginDto);
 
@@ -76,7 +92,9 @@ export class AuthController {
       success: true,
       data: {
         user: result.user,
-        redirectTo: result.redirectTo
+        redirectTo: result.redirectTo,
+        clientId: result.clientId,
+        redirectUri: result.redirectUri
       }
     });
   }

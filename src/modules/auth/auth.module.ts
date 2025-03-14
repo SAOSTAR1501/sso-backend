@@ -14,6 +14,9 @@ import { EmailModule } from '../email/email.module';
 import { UserSettingsModule } from '../setting/user-settings/user-settings.module';
 import { OAuthController } from './oauth.controller';
 import { ClientAppModule } from '../client-app/client-app.module';
+import { MongooseModule } from '@nestjs/mongoose';
+import { AuthorizationCode, AuthorizationCodeSchema } from './authorization-code/authorization-code.schema';
+import { AuthorizationCodeService } from './authorization-code/authorization-code.service';
 
 @Module({
   imports: [
@@ -33,6 +36,9 @@ import { ClientAppModule } from '../client-app/client-app.module';
       }),
       inject: [ConfigService],
     }),
+    MongooseModule.forFeature([
+      { name: AuthorizationCode.name, schema: AuthorizationCodeSchema }
+    ])
   ],
   controllers: [AuthController, OAuthController],
   providers: [
@@ -42,8 +48,9 @@ import { ClientAppModule } from '../client-app/client-app.module';
       provide: 'APP_GUARD',
       useClass: LocalGuard,
     },
-    GoogleStrategy
+    GoogleStrategy,
+    AuthorizationCodeService
   ],
-  exports: [AuthService],
+  exports: [AuthService, AuthorizationCodeService],
 })
 export class AuthModule { }
